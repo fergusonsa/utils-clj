@@ -1,20 +1,20 @@
+;; If connecting to a remote repl, you need to cut and paste the code in this file. 
 ;; lein repl :connect med02.cenx.localnet:4009
 ;;
 ;; OR
 ;;
+;; if connecting to a local repl, you can run the following lines to load this file
 ;; $ cd ~/CENX/src/heimdallr
 ;; $ lein repl :connect `cat .nrepl-port`
-
+;; user=> (ns cenx.heimdallr.customers.vzw-mpn.debug)
+;; cenx.heimdallr.customers.vzw-mpn.debug=> (load-string (slurp "/Users/fergusonsa/CENX/utils/alarms-helpers.clj"))
 ;; 
-;; (ns cenx.heimdallr.debug)
-;; (ns cenx.heimdallr.customers.vzw-mpn.debug)
 (use 'cenx.heimdallr.customers.shared.vzw.debug) 
-(use '[clj-time.core :exclude [second extend]])
+;;(use '[clj-time.core :exclude [second extend start]])
 
 
 (defn load-this-file []
-  (ns cenx.heimdallr.debug)
-  (use 'cenx.heimdallr.customers.shared.vzw.debug) 
+  (ns cenx.heimdallr.customers.vzw-mpn.debug)
   (load-string (slurp "/Users/fergusonsa/CENX/utils/alarms-helpers.clj"))
   )
  
@@ -54,7 +54,7 @@
       (send-vsm alarm-name :Ok scotts-description)
       (swap! submitted-alarms disj alarm-name)))
   (println "\nNumber of alarms currently active: " (count (get-all-active-alarms)))
-  (println "\nNumber of MY alarms currently active: " (count (@submitted-alarms))))
+  (println "\nNumber of MY alarms currently active: " (count @submitted-alarms)))
 
 
 (defn raise-random-alarms [num-to-submit]
@@ -68,7 +68,7 @@
             (swap! submitted-alarms conj alrm-name)
             (send-vsm alrm-name :Failed scotts-description)))))
   (println "\nNumber of alarms currently active: " (count (get-all-active-alarms))))
-  (println "\nNumber of MY alarms currently active: " (count (@submitted-alarms))))
+  (println "\nNumber of MY alarms currently active: " (count @submitted-alarms)))
 
 
 (defn cancel-all-my-alarms []
@@ -78,7 +78,7 @@
       (send-vsm alarm-name :Ok scotts-description)
       (swap! submitted-alarms disj alarm-name)))
   (println "\nNumber of alarms currently active: " (count (get-all-active-alarms)))
-  (println "\nNumber of MY alarms currently active: " (count (@submitted-alarms))))
+  (println "\nNumber of MY alarms currently active: " (count @submitted-alarms)))
 
 (defn cancel-all-my-alarms2 []
   (doseq [alarm-name (filter is-my-alarm (get-all-active-alarms))]     
@@ -115,7 +115,7 @@
     (for [type (get-alarm-types)]
       (raise-alarm-of-type type)))  
   (println "\nNumber of alarms currently active: " (count (get-all-active-alarms)))
-  (println "\nNumber of MY alarms currently active: " (count (@submitted-alarms))))
+  (println "\nNumber of MY alarms currently active: " (count @submitted-alarms)))
 
 (defn clear-random-alarms [num-to-clear]
   (let [initial-num-submitted (count @submitted-alarms)]
@@ -127,7 +127,7 @@
             (send-vsm alarm-name :Ok scotts-description)
             (swap! submitted-alarms disj alarm-name))))))
   (println "\nNumber of alarms currently active:    " (count (get-all-active-alarms)))
-  (println "\nNumber of MY alarms currently active: " (count (@submitted-alarms))))
+  (println "\nNumber of MY alarms currently active: " (count @submitted-alarms)))
 
 
 (defn find-my-alarms []

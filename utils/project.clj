@@ -12,6 +12,6 @@
                  [clj-jgit "0.8.9"]
                  [io.forward/yaml "1.0.6"]
                  [clojurewerkz/propertied "1.3.0"]]
-  :main ^:skip-aot utils.environments
+  :main ^:skip-aot utils.local-environment
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

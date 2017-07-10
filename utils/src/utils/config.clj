@@ -5,6 +5,8 @@
 
 (def workspace-root (str user-root-path "/CENX"))
 
+(def src-root-dir (str workspace-root "/src"))
+
 (def reports-path (str user-root-path "/reports"))
 
 (def nexus-url-base "http://nexus.cenx.localnet:8081/nexus/content/groups/public/cenx/")

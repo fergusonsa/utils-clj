@@ -4,7 +4,6 @@
             [clojure.string :as string]
             [clojure.java.io :as io]
             [yaml.core :as yaml]
-            [utils.repositories :as repositories]
             [utils.identity]
             [utils.core :as utils]
             [utils.config :as config])
@@ -190,38 +189,13 @@
         ))
 
 
-(defn- example-function-calls []
-  (let [env-srvr "med16.cenx.localnet:8080"
-        env1-srvr "med02.cenx.localnet:8080"
-        env2-srvr "localhost:8082"
-        app-name "apollo"
-        version1 "3.3.18"
-        version2 "3.3.17"
-        env-url ""]
-    (get-env-app-versions env-srvr)
-    (get-env-app-info env-url)
-    (display-env-app-versions env-srvr)
-    (compare-envs env1-srvr env2-srvr)
-    (display-env-differences env1-srvr env2-srvr)
-    (open-app-version-diff app-name version1 version2)
-    (open-app-version-diffs env1-srvr env2-srvr)
-    (get-app-diffs-between-tags app-name version1 version2)
-    (download-app-war app-name version1)
-    (download-wars-matching-environment env-srvr)
-    (deploy-wars-matching-environment env-srvr)
-    (update-docker-compose-app-version app-name version1)
-    (update-docker-compose-app-version "mpn" app-name version1)
-    (set-docker-compose-app-version-for-env env-srvr)
-  ))
-
-
 (defn update-docker-compose-app-version
   "
   "
   ([app-name version]
     (update-docker-compose-app-version "mpn" app-name version))
   ([project app-name version]
-    (let [compose-yaml-file (str repositories/src-root-dir "/dev-env/projects/" project "/docker-compose.yml")
+    (let [compose-yaml-file (str config/src-root-dir "/dev-env/projects/" project "/docker-compose.yml")
           compose-yaml (yaml/from-file compose-yaml-file)
           app-key (str (clojure.string/upper-case app-name) "-VERSION")
           existing-version (get-in compose-yaml ["services" "war-deployer" "environment" app-key])]
@@ -253,7 +227,7 @@
   (let [project-name "mpn"
         env-name (first (string/split env-srvr #"\." 2))
         env-app-versions (get-env-app-versions env-srvr)
-        compose-yaml-file (str repositories/src-root-dir "/dev-env/projects/" project-name "/docker-compose.yml")
+        compose-yaml-file (str config/src-root-dir "/dev-env/projects/" project-name "/docker-compose.yml")
         compose-yaml-backup-file (str compose-yaml-file "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)) ".txt")
         compose-yaml (yaml/from-file compose-yaml-file)
         app-keys (filter #(and (not (.startsWith % "HINTERLAND")) (.endsWith % "_VERSION")) (keys (get-in compose-yaml ["services" "war-deployer" "environment"])))
@@ -291,3 +265,27 @@
                     "hecate" "heimdallr" "icarus" "levski" "plataea" "naranathu"
                     "parker" "terminus" "tartarus"])))
 
+
+(defn- example-function-calls []
+  (let [env-srvr "med16.cenx.localnet:8080"
+        env1-srvr "med02.cenx.localnet:8080"
+        env2-srvr "localhost:8082"
+        app-name "apollo"
+        version1 "3.3.18"
+        version2 "3.3.17"
+        env-url ""]
+    (get-env-app-versions env-srvr)
+    (get-env-app-info env-url)
+    (display-env-app-versions env-srvr)
+    (compare-envs env1-srvr env2-srvr)
+    (display-env-differences env1-srvr env2-srvr)
+    (open-app-version-diff app-name version1 version2)
+    (open-app-version-diffs env1-srvr env2-srvr)
+    (get-app-diffs-between-tags app-name version1 version2)
+    (download-app-war app-name version1)
+    (download-wars-matching-environment env-srvr)
+    (deploy-wars-matching-environment env-srvr)
+    (update-docker-compose-app-version app-name version1)
+    (update-docker-compose-app-version "mpn" app-name version1)
+    (set-docker-compose-app-version-for-env env-srvr)
+  ))

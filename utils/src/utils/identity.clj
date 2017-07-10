@@ -3,16 +3,6 @@
             [clojure.java.io :as io])
   (:import [java.nio.file Files CopyOption]))
 
-(def identity-info (load-identity))
-
-
-(defn load-identity []
-  (let [ident-file-path (str config/user-root-path "/.ssh/utils.bitbucket.identity")
-        ident-file (io/file ident-file-path)]
-    (if (not (.exists ident-file))
-      (write-identity (. (. System getenv) get "USER") "UNKNOWN-PWD"))
-    (load-file ident-file-path)))
-
 
 (defn write-identity [username password]
   (let [ident-file-path (str config/user-root-path "/.ssh/utils.bitbucket.identity")
@@ -29,3 +19,14 @@
         (.setWritable true)
         (.setExecutable false))
     nil))
+
+
+(defn load-identity []
+  (let [ident-file-path (str config/user-root-path "/.ssh/utils.bitbucket.identity")
+        ident-file (io/file ident-file-path)]
+    (if (not (.exists ident-file))
+      (write-identity (. (. System getenv) get "USER") "UNKNOWN-PWD"))
+    (load-file ident-file-path)))
+
+
+(def identity-info (load-identity))

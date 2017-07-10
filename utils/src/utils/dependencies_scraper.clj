@@ -12,7 +12,7 @@
         [clojure.set :only [difference intersection]]
         [slingshot.slingshot :only [try+]]))
 
-(def cenx-repo-root (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/"))
+(def build-repo-dependency-node-repo-root (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/"))
 
 (defonce connection-info (atom {:url (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/")}))
 
@@ -243,7 +243,7 @@
 
 (declare build-dependency-node)
 
-(defn build-cenx-dependency-node [repo-name version]
+(defn build-repo-dependency-node [repo-name version]
   (let [tag (utils/get-tag repo-name version)
         deps (get-project-dependencies @connection-info repo-name tag repo-name)
         deps2 (if (keyword? deps) {} deps)
@@ -265,7 +265,7 @@
     (if-let [already-saved-node (get-in @repository-dependency-info [sub-name version])]
       already-saved-node
       (if (.startsWith module-name (str config/library-namespace "/"))
-        (build-cenx-dependency-node sub-name version)
+        (build-repo-dependency-node sub-name version)
         (build-external-dependency-node module-name version)))))
 
 
@@ -300,7 +300,7 @@
     (find-module-dependencies module-name config/default-branch))
   ([module-name version]
     (let [proper-version (check-version module-name version)]
-      (build-cenx-dependency-node module-name proper-version))))
+      (build-repo-dependency-node module-name proper-version))))
 
 
 (defn display-project-dependency-tree
@@ -308,7 +308,7 @@
     (display-project-dependency-tree repo-name config/default-branch))
   ([repo-name version]
     (let [res (find-module-dependencies repo-name version)
-          log-file (get-report-file-name-path (str repo-name "-" version "-dependency-tree") :subdirectory "dependency-trees")
+          log-file (utils/get-report-file-name-path (str repo-name "-" version "-dependency-tree") :subdirectory "dependency-trees")
           out-str (make-tree-readable res)]
       (println out-str)
       (spit log-file out-str)
@@ -318,7 +318,7 @@
 
 (defn create-dependency-tree-reports [& args]
   (doseq [[repo-name version] (if (map? args) args (apply hash-map args))]
-    (let [log-file (get-report-file-name-path (str repo-name "-" version "-dependency-tree") :subdirectory "dependency-trees")]
+    (let [log-file (utils/get-report-file-name-path (str repo-name "-" version "-dependency-tree") :subdirectory "dependency-trees")]
       (->> (find-module-dependencies repo-name version)
             (make-tree-readable)
             (spit log-file))

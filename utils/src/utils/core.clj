@@ -1,4 +1,5 @@
 (ns utils.core
+  "Utility functions used by other namespaces in the utils project"
   (:require [utils.config :as config])
   (:gen-class))
 
