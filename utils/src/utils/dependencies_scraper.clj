@@ -243,12 +243,17 @@
 
 (declare build-dependency-node)
 
-(defn build-repo-dependency-node [repo-name version]
+(defn build-repo-dependency-node [repo-name version & {:keys [depth force-build] :or {depth 0
+                                                                                      force-build false}}]
   (let [tag (utils/get-tag repo-name version)
         deps (get-project-dependencies @connection-info repo-name tag repo-name)
         deps2 (if (keyword? deps) {} deps)
-
-        node {:name repo-name :version version :dependencies (reduce (fn [m [k v]] (assoc m k (build-dependency-node k v))) {} deps2)}]
+        node {:name repo-name
+              :version version
+              :dependencies (reduce
+                              (fn [m [k v]] (assoc m k (build-dependency-node k v :depth depth :force-build force-build)))
+                              {}
+                              deps2)}]
     (swap! repository-dependency-info assoc-in [repo-name version] node)
     node))
 
@@ -259,14 +264,16 @@
     node))
 
 
-(defn build-dependency-node [module-name version]
-  (println "building node for \"" module-name "\" version \"" version "\"")
+(defn build-dependency-node [module-name version & {:keys [depth force-build] :or {depth 0
+                                                                                   force-build false}}]
+;;   (println "building node for \"" module-name "\" version \"" version "\" and depth" depth "and force-build" force-build)
   (let [sub-name (if (.startsWith module-name (str config/library-namespace "/")) (subs module-name 5) module-name)]
-    (if-let [already-saved-node (get-in @repository-dependency-info [sub-name version])]
-      already-saved-node
-      (if (.startsWith module-name (str config/library-namespace "/"))
-        (build-repo-dependency-node sub-name version)
-        (build-external-dependency-node module-name version)))))
+    (let [already-saved-node (get-in @repository-dependency-info [sub-name version])]
+      (if (and already-saved-node (not force-build))
+        already-saved-node
+        (if (.startsWith module-name (str config/library-namespace "/"))
+          (if (not= 1 depth) (build-repo-dependency-node sub-name version :depth (dec depth) :force-build force-build))
+          (build-external-dependency-node module-name version))))))
 
 
 (defn node-has-dependencies? [tree]
@@ -298,9 +305,10 @@
 (defn find-module-dependencies
   ([module-name]
     (find-module-dependencies module-name config/default-branch))
-  ([module-name version]
+  ([module-name version & {:keys [depth force-build] :or {depth 0
+                                                          force-build false}}]
     (let [proper-version (check-version module-name version)]
-      (build-repo-dependency-node module-name proper-version))))
+      (build-repo-dependency-node module-name proper-version :depth depth :force-build force-build))))
 
 
 (defn display-project-dependency-tree
@@ -324,3 +332,52 @@
             (spit log-file))
       (println "Wrote dependency tree for " repo-name version "to" log-file)
       (utils/log-action "Wrote dependency tree for " repo-name version "to" log-file))))
+
+
+(defn strip-name-from-version
+  "Removes the module name and dash (-) from the beginning of a version that is applied to the application. An example is
+    (strip-name-from-version \"apollo\" \"apollo-3.3.18\") => \"3.3.18\"
+  Also will change a version that is a sequence into a string to prevent later issues. An example is
+    (strip-name-from-version \"prismatic/schema\" [\"0.4.3\", \"0.4.2\"]) => \"[0.4.3, 0.4.2\"
+  All other cases will return the original version
+  "
+  [module-name version]
+  (if (and (string? version) (clojure.string/starts-with? version module-name))
+    (clojure.string/replace-first version (re-pattern (str module-name "-")) "")
+    (if (coll? version)
+      (str "[" (apply str (interpose ", " version)) "]")
+      version)))
+
+
+(defn coallate-dependencies-versions [deps]
+  (if (map? deps)
+    (if (get deps :name)
+      (try+
+        (let [base-map {(:name deps) (sorted-set (strip-name-from-version (:name deps) (:version deps)))}
+              sub-deps (get deps :dependencies)]
+          (merge-with into (hash-map)
+                      base-map
+                      (if (nil? sub-deps)
+                        (hash-map)
+                        (apply merge-with into (hash-map) (map coallate-dependencies-versions (vals sub-deps))))))
+        (catch Object _
+          (println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+          (pprint deps)
+          (println (:object &throw-context))
+          (println (:message &throw-context))
+          (println (:cause &throw-context))
+          (println (:stack-trace &throw-context))
+          (println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"))))
+;;       (try+
+;;         (apply merge-with into (hash-map) (map coallate-dependencies-versions (vals deps)))
+;;         (catch Object _
+;;           (println "?????????????????????????????????????")
+;;           (pprint deps)
+;;           (println (:message &throw-context))
+;;           (println (:cause &throw-context))
+;;           (println "????????????????????????????????????"))))
+    (println "deps is not a map:" deps ":")))
+
+
+(defn coallate-dependencies-versions-sorted [deps]
+  (into (sorted-map) (coallate-dependencies-versions deps)))

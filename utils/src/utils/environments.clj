@@ -244,6 +244,7 @@
             :dumper-options {:flow-style :block}))
     (utils/log-action "(set-docker-compose-app-version-for-env "\" env-srvr "\") : updated " compose-yaml-file " with versions " xx)))
 
+
 (defn load-props
   "Given a path to a properties file, load it into a Java Properties object."
   [readable]
@@ -252,18 +253,34 @@
       (.load props))))
 
 
+(defn strip-hash-comments [str-check]
+  (clojure.string/trim (first (clojure.string/split str-check #"#" 2))))
+
+
+(defn strip-hash-comments-map-values [m]
+  (into {} (for [[k v] m] [k (clojure.string/trim (first (clojure.string/split v #"#" 2)))])))
+
+
 (defn get-app-versions-from-manifest-properties [branch]
   ; curl --user scott.ferguson@cenx.com:<pwd> https://bitbucket.org/cenx-cf/exanova/raw/906d95a8ffb5949adfabe32d6a1b1ff5fd6004f6/manifest.properties
-;;   (doto (Properties.(
-  (-> (str "https://bitbucket.org/" config/bitbucket-root-user "/exanova/raw/" branch "/manifest.properties")
-      (client/get {:basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] })
-      (:body)
-      (.getBytes)
-      (io/input-stream)
-      (load-props)
-      (select-keys ["apollo" "hinterland" "babelfish" "bifrost" "conduit" "delorean"
-                    "hecate" "heimdallr" "icarus" "levski" "plataea" "naranathu"
-                    "parker" "terminus" "tartarus"])))
+  (try+
+    (-> (str "https://bitbucket.org/" config/bitbucket-root-user "/exanova/raw/" branch "/manifest.properties")
+        (client/get {:basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] })
+        (:body)
+        (.getBytes)
+        (io/input-stream)
+        (load-props)
+        (select-keys ["apollo" "hinterland" "babelfish" "bifrost" "conduit" "delorean"
+                      "hecate" "heimdallr" "icarus" "levski" "plataea" "naranathu"
+                      "parker" "terminus" "tartarus"])
+        (strip-hash-comments-map-values))
+    (catch [:status 404] {}
+      (println "The" branch "does not exist")
+      {})
+    (catch Object _
+      (println "Exception trying to get app versions from manifest.properties for branch" branch)
+      (println (:message &throw-context))
+      {})))
 
 
 (defn- example-function-calls []
