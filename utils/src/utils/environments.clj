@@ -18,42 +18,44 @@
 (defonce connection-info (atom {:url "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/"}))
 
 
-(defn get-env-app-info [env-url]
-  (let [cloj-src (client/get env-url)
-        mod-src (clojure.string/replace (:body cloj-src) #":connection ([a-zA-Z0-9.@]*)" ":connection \"$1\"")
-        app-info (load-string mod-src)
-        apps-list (string/split (:runtime-names app-info) #", ")]
-
-    (assoc app-info :app-versions
-      (into (sorted-map)
-        (for [name apps-list]
-          (if-let [ matcher (re-find #"([a-zA-Z-]*)(-(([0-9]+\.)+[0-9]+))?\.[jw]ar" name)]
-            [(second matcher) (last (butlast matcher))]))))))
+(defn get-server-status-api-url
+  "Returns the proper url for the bifrost api status.
+  Can handle included or missing protocol, port, and path portions of the url"
+  [env-srvr]
+  (str (if (not (.startsWith env-srvr "http")) "http://" "")
+    env-srvr
+    (if (and (not (re-find #":[0-9]+" env-srvr)) (not (.endsWith env-srvr "/api/status"))) ":8080" "")
+    (if (not (.endsWith env-srvr "/api/status")) "/api/status" "")))
 
 
-(defn get-env-app-versions [env-srvr]
-  (let [env-url (str "http://" env-srvr "/api/status")
-        env-info (get-env-app-info env-url)]
-        (:app-versions env-info)))
+(defn get-env-app-info [env-srvr]
+  "Gets the versions of applications deployed to the specified server by calling the
+  api/status interface and parsing the results to return a sorted map with application
+  names as keys and versions as values."
+  (-> (get-server-status-api-url env-srvr)
+      (client/get)
+      (:body)
+      (clojure.string/replace  #":connection ([a-zA-Z0-9.@]*)" ":connection \"$1\"")
+      (load-string)
+      (:runtime-names)
+      (string/split  #", ")
+      ((partial map (fn [x] (if-let [ matcher (re-find #"([a-zA-Z-]*)(?:-((?:[0-9.-]+)(?:-snapshot)?))?\.[jw]ar" x)]
+                      [(second matcher) (last matcher)]
+                      [x nil]))))
+      (#(into (sorted-map) %))))
 
 
 (defn display-env-app-versions [env-srvr]
-  (let [env-name (first (string/split env-srvr #"\." 2))
-        env-app-versions (get-env-app-versions env-srvr)]
-    (println "Application versions for" env-name)
-    (pprint env-app-versions)
-    (utils/log-action "(display-env-app-versions \"" env-srvr "\")")))
+  (println "Application versions for" (first (string/split env-srvr #"\." 2)))
+  (pprint (get-env-app-info env-srvr))
+  (utils/log-action "(display-env-app-versions \"" env-srvr "\")"))
 
 
 (defn compare-envs [env1-srvr env2-srvr]
-  (let [env1-url (str "http://" env1-srvr "/api/status")
-        env2-url (str "http://" env2-srvr "/api/status")
-        env1-name (first (string/split env1-srvr #"\." 2))
+  (let [env1-name (first (string/split env1-srvr #"\." 2))
         env2-name (first (string/split env2-srvr #"\." 2))
-        env1-info (get-env-app-info env1-url)
-        env2-info (get-env-app-info env2-url)
-        env1-app-versions (:app-versions env1-info)
-        env2-app-versions (:app-versions env2-info)
+        env1-app-versions (get-env-app-info (get-server-status-api-url env1-srvr))
+        env2-app-versions (get-env-app-info (get-server-status-api-url env2-srvr))
         k1 (set (keys env1-app-versions))
         k2 (set (keys env2-app-versions))
         missing-in-1 (difference k2 k1)
@@ -146,20 +148,14 @@
 
 
 (defn download-wars-matching-environment [env-srvr]
-  (let [env-url (str "http://" env-srvr "/api/status")
-        env-info (get-env-app-info env-url)
-        env-name (first (string/split env-srvr #"\." 2))
-        env-app-versions (filter #(some? (second %)) (:app-versions env-info))]
+  (let [env-app-versions (filter #(some? (second %)) (get-env-app-info env-srvr))]
     (pprint env-app-versions)
     (for [versions env-app-versions]
       (download-app-war (first versions) (second versions)))))
 
 
 (defn deploy-wars-matching-environment [env-srvr]
-  (let [env-url (str "http://" env-srvr "/api/status")
-        env-info (get-env-app-info env-url)
-        env-name (first (string/split env-srvr #"\." 2))
-        env-app-versions (filter #(some? (second %)) (:app-versions env-info))
+  (let [env-app-versions (filter #(some? (second %)) (get-env-app-info env-srvr))
         url-base "http://admin:admin@192.168.99.100:9990/management"]
     (for [versions env-app-versions]
       (let [app-name (first versions)
@@ -167,16 +163,12 @@
             war-filename (str app-name "-" version ".war")
             war-dir (str config/workspace-root "/warfiles")
             app-war-dir (str war-dir "/" app-name)
-            dest-path (str app-war-dir "/" war-filename)
-            undeploy-url (str "curl -S -H \"content-Type: application/json\" -d '{\"operation\":\"undeploy\", \"address\":[{\"deployment\":\"" war-filename  "\"}]}' --digest" url-base)
-            remove-url (str "curl -S -H \"content-Type: application/json\" -d '{\"operation\":\"remove\", \"address\":[{\"deployment\":\"" war-filename "\"}]}' --digest " url-base)
-            upload-url (str "curl -F \"file=@" dest-path "\" --digest " url-base "/add-content")
-            deploy-url (str "curl -S -H \"Content-Type: application/json\" -d '{\"content\":[{\"hash\": {\"BYTES_VALUE\" : \"...<BYTES_VALUE VALUE FROM RESPONSE TO UPLOAD URL>...\"}}], \"address\": [{\"deployment\":\"" war-filename "\"}], \"operation\":\"add\", \"enabled\":\"true\"}' --digest " url-base)]
+            dest-path (str app-war-dir "/" war-filename)]
         (println "For app " app-name)
-        (println "undeploy url: " undeploy-url)
-        (println "remove url  : " remove-url)
-        (println "upload url  : " upload-url)
-        (println "deploy url  : " deploy-url)
+        (println "undeploy url:" (str "curl -S -H \"content-Type: application/json\" -d '{\"operation\":\"undeploy\", \"address\":[{\"deployment\":\"" war-filename  "\"}]}' --digest" url-base))
+        (println "remove url  :" (str "curl -S -H \"content-Type: application/json\" -d '{\"operation\":\"remove\", \"address\":[{\"deployment\":\"" war-filename "\"}]}' --digest " url-base))
+        (println "upload url  :" (str "curl -F \"file=@" dest-path "\" --digest " url-base "/add-content"))
+        (println "deploy url  :" (str "curl -S -H \"Content-Type: application/json\" -d '{\"content\":[{\"hash\": {\"BYTES_VALUE\" : \"...<BYTES_VALUE VALUE FROM RESPONSE TO UPLOAD URL>...\"}}], \"address\": [{\"deployment\":\"" war-filename "\"}], \"operation\":\"add\", \"enabled\":\"true\"}' --digest " url-base))
         (println)))))
 
 
@@ -226,7 +218,7 @@
   [env-srvr]
   (let [project-name "mpn"
         env-name (first (string/split env-srvr #"\." 2))
-        env-app-versions (get-env-app-versions env-srvr)
+        env-app-versions (get-env-app-info env-srvr)
         compose-yaml-file (str config/src-root-dir "/dev-env/projects/" project-name "/docker-compose.yml")
         compose-yaml-backup-file (str compose-yaml-file "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)) ".txt")
         compose-yaml (yaml/from-file compose-yaml-file)
@@ -291,7 +283,6 @@
         version1 "3.3.18"
         version2 "3.3.17"
         env-url ""]
-    (get-env-app-versions env-srvr)
     (get-env-app-info env-url)
     (display-env-app-versions env-srvr)
     (compare-envs env1-srvr env2-srvr)

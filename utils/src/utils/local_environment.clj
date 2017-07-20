@@ -3,6 +3,8 @@
             [utils.environments :as environments]
             [utils.repositories :as repositories]
             [utils.config :as config]
+            [clj-time.core :as time-core]
+            [clj-time.format :as time-format]
             [utils.fake :as creds])
   (:use [clojure.pprint]
         [clojure.set :only [difference intersection]]
@@ -146,19 +148,23 @@
 
 
 (defn check-config-settings
+  "Displays the current settings for the apps/modules in the /opt/cenx/application directory."
   ([]
    (check-config-settings (keys configs-to-check)))
   ([& cnfgs-names-to-check]
+    (println "\nConfig settings in" config-path-root "- " (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n")
     (doseq [[app-name details] (select-keys configs-to-check (if (seq? (first cnfgs-names-to-check)) (first cnfgs-names-to-check) cnfgs-names-to-check))]
       (check-config-file app-name (str config-path-root "/" app-name "/" (:file-name details)) details)
       (println))))
 
 
 (defn check-source-config-settings
+  "Displays the current settings for the apps/modules in the source repositories."
   ([& cnfgs-names-to-check]
     (let [repos-to-check (if (> (count cnfgs-names-to-check) 0)
                            (intersection (set cnfgs-names-to-check) (set (repositories/get-repos-in-src-root)) (set (keys configs-to-check)))
                            (intersection (set (repositories/get-repos-in-src-root)) (set (keys configs-to-check))))]
+      (println "\nConfig settings in source repositories - " (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n")
       (doseq [[app-name details] (select-keys configs-to-check repos-to-check)]
         (if (and (not (nil? (:source-config-path details))) (not= "" (:source-config-path details)))
           (do

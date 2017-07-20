@@ -6,7 +6,8 @@
             [clojure.string]
             [utils.core :as utils]
             [utils.identity]
-            [utils.config :as config])
+            [utils.config :as config]
+            [version-clj.core :as version])
   (:use clojure.pprint
         clojure.core
         [clojure.set :only [difference intersection]]
@@ -16,7 +17,7 @@
 
 (defonce connection-info (atom {:url (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/")}))
 
-(def library_info (atom {}))
+(defonce library_info (atom {}))
 
 (defn retrieve_library_info
   [lib_name]
@@ -38,34 +39,54 @@
   (get @library_info lib_name (retrieve_library_info lib_name)))
 
 
+(defn strip-name-from-version
+  "Removes the module name and dash (-) from the beginning of a version that is applied to the application. An example is
+    (strip-name-from-version \"apollo\" \"apollo-3.3.18\") => \"3.3.18\"
+  Also will change a version that is a sequence into a string to prevent later issues. An example is
+    (strip-name-from-version \"prismatic/schema\" [\"0.4.3\", \"0.4.2\"]) => \"[0.4.3, 0.4.2\"
+  All other cases will return the original version
+  "
+  [module-name version]
+  (if (and (string? version) (clojure.string/starts-with? version module-name))
+    (clojure.string/replace-first version (re-pattern (str module-name "-")) "")
+    (if (coll? version)
+      (str "[" (apply str (interpose ", " version)) "]")
+      version)))
+
+
 (defn modify-project-clj-src [project_cli_src repo-name]
   (try+
 
     ;; Change the project.clj source from a (defproject... macro call to just a map
-    (-> (str "{\n " (subs project_cli_src (clojure.string/index-of project_cli_src "\n") (- (count (clojure.string/trimr project_cli_src)) 1)) "\n}")
-      ;; Remove the :cljfmt key and value as the value may have a regex pattern that may not be easily escaped!
-      (clojure.string/replace  #":cljfmt\s+\{([^{}]*|\{([^{}]*|\{[^{}]*\})*\})*}" "")
-      ;; Remove the :package key and value as the value may have a pattern that may not be easily escaped!
-      (clojure.string/replace  #":package\s+\{([^{}]*|\{([^{}]*|\{[^{}]*\})*\})*}" "")
-      ;; Remove the :minify-assets key and value as it is not required and may cause load-string to fail.
-      (clojure.string/replace  #":minify-assets\s+\{([^{}]*|\{([^{}]*|\{[^{}]*\})*\})*}" "")
-      ;; Remove the :description key and value as it may have \n which could mess up how later regex happen.
-      (clojure.string/replace #":description\s+\"[^\"]*\"" "")
-      ;; Remove any :injections key and value as they are not required and may cause load-string to fail.
-      (clojure.string/replace #":injections\s+\[[^\[\]]*\]" "")
-      ;; Remove the :repositories key and value as they are not required and may cause load-string to fail.
-      (clojure.string/replace #":repositories\s+(\^:replace\s+)?\[([^\[\]]*|\[([^\[\]]*|\[[^\[\]]*\])*\])*\]" "")
-      ;; The :uberjar-exclusions attribute  can have a regex pattern and since we do not need it, just remove it
-      (clojure.string/replace #":uberjar-exclusions\s+\[([^\[\]]*|\[([^\[\]]*|\[[^\[\]]*\])*\])*\]" "")
+    (-> (str "{\n " (subs project_cli_src 0 (- (count (clojure.string/trimr project_cli_src)) 1)) "\n}")
+        ;; Change the (defproject declaration to be :name and :version map keys
+        (clojure.string/replace  #"\(\s*defproject\s+([a-zA-Z0-9-/]+)\s+" ":name \"$1\"\n:version ")
 
-      ;; TODO Need to handle multiple names inside [...] as in
-      ;; :exclusions ["cenx/stentor" potemkin cenx/hades "org.clojure/clojure"]
-      (clojure.string/replace #"\[[^\[\]]*\]" (fn [v] (let [parts (clojure.string/split v #" +")] (if (> (count parts) 2) (apply str (interpose "\n" parts)) v))))
+        ;; Remove the any comments
+        (clojure.string/replace  #";.*\n" "")
+        ;; Remove the :cljfmt key and value as the value may have a regex pattern that may not be easily escaped!
+        (clojure.string/replace  #":cljfmt\s+\{([^{}]*|\{([^{}]*|\{[^{}]*\})*\})*}" "")
+        ;; Remove the :package key and value as the value may have a pattern that may not be easily escaped!
+        (clojure.string/replace  #":package\s+\{([^{}]*|\{([^{}]*|\{[^{}]*\})*\})*}" "")
+        ;; Remove the :minify-assets key and value as it is not required and may cause load-string to fail.
+        (clojure.string/replace  #":minify-assets\s+\{([^{}]*|\{([^{}]*|\{[^{}]*\})*\})*}" "")
+        ;; Remove the :description key and value as it may have \n which could mess up how later regex happen.
+        (clojure.string/replace #":description\s+\"[^\"]*\"" "")
+        ;; Remove any :injections key and value as they are not required and may cause load-string to fail.
+        (clojure.string/replace #":injections\s+\[[^\[\]]*\]" "")
+        ;; Remove the :repositories key and value as they are not required and may cause load-string to fail.
+        (clojure.string/replace #":repositories\s+(\^:replace\s+)?\[([^\[\]]*|\[([^\[\]]*|\[[^\[\]]*\])*\])*\]" "")
+        ;; The :uberjar-exclusions attribute  can have a regex pattern and since we do not need it, just remove it
+        (clojure.string/replace #":uberjar-exclusions\s+\[([^\[\]]*|\[([^\[\]]*|\[[^\[\]]*\])*\])*\]" "")
 
-      ;; Change any namespace or class names to strings since they will not be present in the repl
-      (clojure.string/replace #"(\[)([a-zA-Z][a-zA-Z0-9.\/\-_]*)" "$1\"$2\"")
-      (clojure.string/replace #" ([a-zA-Z][a-zA-Z0-9.\/\-_]*)(])" " \"$1\"$2")
-      (clojure.string/replace #"(\n[\t ]*|:[a-zA-Z-]+ )([a-zA-Z][a-zA-Z0-9.\/\-_]*)" "$1\"$2\"")
+        ;; Need to handle multiple names inside [...] as in
+        ;; :exclusions ["cenx/stentor" potemkin cenx/hades "org.clojure/clojure"]
+        (clojure.string/replace #"\[[^\[\]]*\]" (fn [v] (let [parts (clojure.string/split v #" +")] (if (> (count parts) 2) (apply str (interpose "\n" parts)) v))))
+
+        ;; Change any namespace or class names to strings since they will not be present in the repl
+        (clojure.string/replace #"(\[)([a-zA-Z][a-zA-Z0-9.\/\-_]*)" "$1\"$2\"")
+        (clojure.string/replace #" ([a-zA-Z][a-zA-Z0-9.\/\-_]*)(])" " \"$1\"$2")
+        (clojure.string/replace #"(\n[\t ]*|:[a-zA-Z-]+ )([a-zA-Z][a-zA-Z0-9.\/\-_]*)" "$1\"$2\"")
       )
 
     (catch Object _
@@ -243,12 +264,14 @@
 
 (declare build-dependency-node)
 
-(defn build-repo-dependency-node [repo-name version & {:keys [depth force-build] :or {depth 0
+(defn build-repo-dependency-node [module-name version & {:keys [depth force-build] :or {depth 0
                                                                                       force-build false}}]
-  (let [tag (utils/get-tag repo-name version)
+  (let [repo-name (if (.startsWith module-name (str config/library-namespace "/")) (subs module-name (count (str config/library-namespace "/"))) module-name)
+        tag (utils/get-tag repo-name version)
         deps (get-project-dependencies @connection-info repo-name tag repo-name)
         deps2 (if (keyword? deps) {} deps)
         node {:name repo-name
+              :full-name module-name
               :version version
               :dependencies (reduce
                               (fn [m [k v]] (assoc m k (build-dependency-node k v :depth depth :force-build force-build)))
@@ -267,12 +290,12 @@
 (defn build-dependency-node [module-name version & {:keys [depth force-build] :or {depth 0
                                                                                    force-build false}}]
 ;;   (println "building node for \"" module-name "\" version \"" version "\" and depth" depth "and force-build" force-build)
-  (let [sub-name (if (.startsWith module-name (str config/library-namespace "/")) (subs module-name 5) module-name)]
+  (let [sub-name (if (.startsWith module-name (str config/library-namespace "/")) (subs module-name (count (str config/library-namespace "/"))) module-name)]
     (let [already-saved-node (get-in @repository-dependency-info [sub-name version])]
       (if (and already-saved-node (not force-build))
         already-saved-node
         (if (.startsWith module-name (str config/library-namespace "/"))
-          (if (not= 1 depth) (build-repo-dependency-node sub-name version :depth (dec depth) :force-build force-build))
+          (if (not= 1 depth) (build-repo-dependency-node module-name version :depth (dec depth) :force-build force-build))
           (build-external-dependency-node module-name version))))))
 
 
@@ -334,26 +357,11 @@
       (utils/log-action "Wrote dependency tree for " repo-name version "to" log-file))))
 
 
-(defn strip-name-from-version
-  "Removes the module name and dash (-) from the beginning of a version that is applied to the application. An example is
-    (strip-name-from-version \"apollo\" \"apollo-3.3.18\") => \"3.3.18\"
-  Also will change a version that is a sequence into a string to prevent later issues. An example is
-    (strip-name-from-version \"prismatic/schema\" [\"0.4.3\", \"0.4.2\"]) => \"[0.4.3, 0.4.2\"
-  All other cases will return the original version
-  "
-  [module-name version]
-  (if (and (string? version) (clojure.string/starts-with? version module-name))
-    (clojure.string/replace-first version (re-pattern (str module-name "-")) "")
-    (if (coll? version)
-      (str "[" (apply str (interpose ", " version)) "]")
-      version)))
-
-
 (defn coallate-dependencies-versions [deps]
   (if (map? deps)
     (if (get deps :name)
       (try+
-        (let [base-map {(:name deps) (sorted-set (strip-name-from-version (:name deps) (:version deps)))}
+        (let [base-map {(:name deps) (sorted-set-by version/version-compare (strip-name-from-version (:name deps) (:version deps)))}
               sub-deps (get deps :dependencies)]
           (merge-with into (hash-map)
                       base-map

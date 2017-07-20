@@ -3,6 +3,10 @@
 
 (def user-root-path "/Users/fergusonsa")
 
+(def ssh-public-key-path (str user-root-path "/.ssh/id_rsa.pub"))
+
+(def ssh-private-key-path (str user-root-path "/.ssh/id_rsa"))
+
 (def workspace-root (str user-root-path "/CENX"))
 
 (def src-root-dir (str workspace-root "/src"))
