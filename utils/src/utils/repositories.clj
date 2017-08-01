@@ -1,19 +1,23 @@
 (ns utils.repositories
-  (:require [clj-jgit.porcelain]
-            [utils.dependencies-scraper :as dependencies]
-            [clojure.java.io :as io]
-            [clj-time.core :as time-core]
-            [clj-time.coerce :as time-coerce]
+  "Helper utilities for dealing with local git repositories of clojure code.
+
+  Uses third party libraries clj-jgit, clj-http, clj-time, slingshot.slingshot, clojure.tools.nrepl
+  "
+  (:require [clojure.java.io :as io]
+            [utils.dependencies :as dependencies]
             [utils.core :as utils]
             [utils.environments :as environments]
             [utils.config :as config]
             [utils.identity]
-            [clj-http.client :as client])
+            [clj-time.core :as time-core]
+            [clj-time.coerce :as time-coerce]
+            [clj-jgit.porcelain]
+            [clj-http.client :as client]
+            [clojure.tools.nrepl :as repl])
   (:use [clojure.set :only [difference intersection]]
         [clojure.java.browse]
         [clojure.pprint]
-        [slingshot.slingshot :only [try+]]
-        [clojure.tools.nrepl :as repl])
+        [slingshot.slingshot :only [try+]])
   (:import [org.eclipse.jgit.api.errors RefNotFoundException
                                         StashApplyFailureException
                                         CheckoutConflictException]

@@ -1,4 +1,5 @@
-(ns utils.dependencies-scraper
+(ns utils.dependencies
+  ""
   (:require [clj-http.client :as client]
             [cheshire.core :as json]
             [clj-time.format :as time-format]

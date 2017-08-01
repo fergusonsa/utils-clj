@@ -13,6 +13,6 @@
                  [io.forward/yaml "1.0.6"]
                  [clojurewerkz/propertied "1.3.0"]
                  [version-clj "0.1.2"]]
-  :main ^:skip-aot utils.local-environment
+  :main ^:skip-aot utils.config
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})
