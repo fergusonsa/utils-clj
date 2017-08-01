@@ -22,7 +22,11 @@
            [java.nio.file.attribute FileAttribute]))
 
 
-(defn is-cenx-module? [module-name]
+(defn is-controlled-module?
+  "Checks to see if the module is a controlled module using the following rules:
+  - if the module is in the utils.dependencies-scraper/repository-dependency-info,
+    and the :full-name that starts with the utils.config/library-namespace setting."
+  [module-name]
   (if-let [dep-info (get @dependencies/repository-dependency-info module-name)]
     (if-let [full-name (get (second (first dep-info)) :full-name)]
       (.startsWith full-name (str config/library-namespace "/"))
@@ -30,11 +34,18 @@
     false))
 
 
-(defn get-repo [repo-name]
-   (if (.isDirectory (io/file (str config/src-root-dir "/" repo-name)))
-     (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
+(defn get-repo
+  "Helper method for getting a clj-jgit Git instance for the local git
+  repository with the specified repo-name.
+  If the root-path is not provided, uses the config/src-root-dir setting as
+  the directory where the repository is localed."
+  ([repo-name]
+   (get-repo config/src-root-dir repo-name))
+  ([root-path repo-name]
+   (if (.isFile (io/file (str root-path "/" repo-name "/.git")))
+     (clj-jgit.porcelain/with-repo (str root-path "/" repo-name)
        repo)
-     nil))
+     nil)))
 
 
 (defn get-release-branches
@@ -44,14 +55,26 @@
   [& {:keys [url]
       :or {url (str "https://api.bitbucket.org/2.0/repositories/"
                     config/bitbucket-root-user
-                    "/exanova/refs/branches?q=name+%7E+%22r/%22&fields=-values.links,-values.type,-values.target.hash,-values.target.repository,-values.target.author,-values.target.parents,-values.target.links,-values.target.type,-values.target.message")}}]
+                    "/exanova/refs/branches?q=name+%7E+%22r/%22"
+                    "&fields=-values.links,-values.type,-values.target.hash,"
+                    "-values.target.repository,-values.target.author,-values.target.parents,"
+                    "-values.target.links,-values.target.type,-values.target.message")}}]
    (let [results (:body (client/get url
-                            {:content-type :json :basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] :throw-exceptions false :as :json}))]
+                            {:content-type :json
+                             :basic-auth [(:user utils.identity/identity-info)
+                                          (:password utils.identity/identity-info)]
+                             :throw-exceptions false
+                             :as :json}))]
       (concat (:values results)
             (if (get results :next)
               (get-release-branches :url (get results :next))))))
 
-(defn get-repos-in-src-root []
+(defn get-repos-in-src-root
+  "Returns a lazy sequence of directory names (not paths) in the utils.config/src-root-dir directory that
+  meet the following rules:
+  - Contains a .git sub-directory.
+  - Contains a project.clj file."
+  []
   (let [directory (clojure.java.io/file config/src-root-dir)]
     (map #(.getName %) (filter #(and (.isDirectory (clojure.java.io/file %))
                                      (.isDirectory (clojure.java.io/file (str % "/.git")))
@@ -76,36 +99,41 @@
     (println "The target path for the symlink" target-path "does not exist")))
 
 
-(defn get-version-from-repo [repo]
+(defn get-version-from-repo
+  ""
+  [repo]
   (if (clj-jgit.porcelain/git-branch-attached? repo)
     (clj-jgit.porcelain/git-branch-current repo)
     (.call (.setTarget (.describe repo) (clj-jgit.porcelain/git-branch-current repo)))))
 
 
-(defn get-repo-version [repo-name]
+(defn get-repo-version
+  ""
+  [repo-name]
   (if (.isDirectory (io/file (str config/src-root-dir "/" repo-name "/.git")))
     (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
       (get-version-from-repo repo))))
 
 
-(defn get-repo-version-map [repo-name]
+(defn get-repo-version-map
+  ""
+  [repo-name]
   { repo-name (get-repo-version repo-name)})
 
 
-(defn show-src-version [& repo-names]
-;;   (let [repos-to-check (if (> (count repo-names) 0)
-;;                          (intersection (set repo-names) (set (get-repos-in-src-root)))
-;;                          (get-repos-in-src-root))]
-;;     (map #(list % (dependencies/strip-name-from-version % (get-repo-version %))) repos-to-check)))
+(defn get-repo-src-versions
+  ""
+  [& repo-names]
   (->> (if (> (count repo-names) 0)
          (intersection (set repo-names) (set (get-repos-in-src-root)))
          (get-repos-in-src-root))
        (map #(hash-map % (dependencies/strip-name-from-version % (get-repo-version %))))
-       (into (sorted-map))
-       ))
+       (into (sorted-map))))
+
 
 (defn check-for-checkouts-directory
-  "Checks to see if there is a checkouts directory in the repo-path and returns a sequence of the files contained there."
+  "Checks to see if there is a checkouts directory in the repo-path and returns
+  a sequence of the files contained there."
   [repo-path]
   (let [checkouts-dir (io/file (str repo-path "/checkouts"))]
     (if (.isDirectory checkouts-dir)
@@ -212,6 +240,7 @@
 
 (defn set-repo-version
   "Performs git checkout of the desired version of the repo.
+
   Performs the following steps to try to reduce manual actions:
   1. Get current status.
   2. If changes present in starting status, perform git stash save to save changes for later application.
@@ -288,15 +317,19 @@
   or multiple arguments of module-name version.
       (set-repo-versions \"apollo\" \"3.3.18\" \"bifrost\" \"1.9.6\")"
   [& args]
-  (doseq [[repo-name version] (if (map? (first args)) (first args) (apply hash-map args))]
-    (set-repo-version repo-name version)))
+  (->> (if (map? (first args))
+        (first args)
+        (apply hash-map args))
+      (map #(set-repo-version (key %) (val %)))))
 
 
-(defn set-repo-version-same-as-env [env-srvr]
-  (let [env-versions (environments/get-env-app-info env-srvr)
-        repos-to-set (intersection (set (keys env-versions)) (set (get-repos-in-src-root)))]
-    (doseq [repo-name repos-to-set]
-      (set-repo-version repo-name (str repo-name "-" (get env-versions repo-name))))))
+(defn set-repo-version-same-as-env
+  "In all the local repos in the src directory to the versions of applications listed
+  in the manifest.properties in the specified branch."
+  [env-srvr]
+  (-> (environments/get-env-app-info env-srvr)
+      (select-keys (get-repos-in-src-root))
+      (set-repo-versions)))
 
 
 (defn set-repo-version-same-as-manifest
@@ -312,11 +345,12 @@
 (defn set-linked-repo-versions [repo-name]
   (let [lib-versions (get-linked-repo-versions repo-name)
         deps (dependencies/find-module-dependencies repo-name (get-repo-version repo-name) :depth 1)]
-    (->> (select-keys (:dependencies deps) (filter is-cenx-module? (keys (:dependencies deps))))
+    (->> (select-keys (:dependencies deps) (filter is-controlled-module? (keys (:dependencies deps))))
          (vals)
          (map (fn [m] {(:name m) (:version m)}))
          (apply merge-with into (hash-map))
-         (filter #(and (.contains (keys lib-versions) (key %)) (not= (val %) (get lib-versions %))))
+         (filter #(and (.contains (keys lib-versions) (key %))
+                       (not= (val %) (get lib-versions %))))
          (into {})
          (set-repo-versions))))
 
@@ -329,7 +363,7 @@
   ([repo-name version]
     (let [deps (dependencies/find-module-dependencies repo-name version)
           coll-deps (dependencies/coallate-dependencies-versions deps)
-          modules-to-check (select-keys coll-deps (filter is-cenx-module? (keys coll-deps)))
+          modules-to-check (select-keys coll-deps (filter is-controlled-module? (keys coll-deps)))
           modules-versions (into {} (map (fn [m] {(key m) (last (val m))}) modules-to-check))]
       (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
         (map #(get-library-repos-for-module repo-name version (key %) (val %)) modules-versions))))
@@ -337,8 +371,7 @@
     (let [dest-dir (str config/src-root-dir "/" library-name)
           source-url (str "git@bitbucket.org:" config/bitbucket-root-user"/" library-name ".git")
           repo-dir (str config/src-root-dir "/" repo-name)
-          checkouts-dir (str repo-dir "/checkouts")
-          checkouts-lib-symlink (str checkouts-dir "/" library-name)]
+          checkouts-dir (str repo-dir "/checkouts")]
       (if (.isDirectory (clojure.java.io/file dest-dir))
         (do ;; A local git repo for library module already exists. Just checkout the desired version.
           (println "Library repo" library-name "already exists in" dest-dir)
@@ -351,10 +384,7 @@
                                              :passphrase (:password utils.identity/identity-info)
                                              :exclusive true}
             (let [repo (:repo (clj-jgit.porcelain/git-clone-full source-url dest-dir))]
-              (set-repo-version repo library-name library-version)))))
-;;       (if (not (.exists  (io/file checkouts-lib-symlink)))
-;;           (create-symlink dest-dir checkouts-lib-symlink))
-      )))
+              (set-repo-version repo library-name library-version))))))))
 
 
 (defn example_function_calls []
