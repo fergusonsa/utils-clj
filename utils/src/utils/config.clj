@@ -3,7 +3,7 @@
 
   The default set of configuration settings are:
     bitbucket-root-user - The bitbucket user that contains the git repositories under control.
-    default-branch - The default master branch in the controlled git repositories.
+    default-branch - The default master branch of the git repositories.
     library-namespace - The namespace containing all the controlled clojure libraries, such that <library-namespace>.<library-name> is the namespace for a library.
     nexus-url-base - The root url for checking for released versions of libraries and applications in a nexus repository
     reports-path - The root directory where reports are to be stored. Defaults to ~/reports
@@ -22,16 +22,26 @@
   (:import [java.nio.file Files CopyOption]))
 
 
-(def defaults {"user-root-path" (System/getProperty "user.home")
-               "ssh-public-key-path" (str (System/getProperty "user.home") "/.ssh/id_rsa.pub")
-               "ssh-private-key-path" (str (System/getProperty "user.home") "/.ssh/id_rsa")
-               "workspace-root" (str (System/getProperty "user.home") "/ROOT")
-               "src-root-dir" (str (System/getProperty "user.home") "/ROOT/src")
-               "reports-path" (str (System/getProperty "user.home") "/reports")
-               "nexus-url-base" "http://nexus.root.localnet:8081/nexus/content/groups/public/root/"
-               "library-namespace" "root"
-               "bitbucket-root-user" "root-user"
-               "default-branch" "integration"})
+(def defaults {"user-root-path" {:value (System/getProperty "user.home")
+                                 :doc "The path to the user's root directory. Defaults to ~/"}
+               "ssh-public-key-path" {:value (str (System/getProperty "user.home") "/.ssh/id_rsa.pub")
+                                      :doc "The path to the public rsa key file. Defaults to ~/.ssh/id_rsa.pub"}
+               "ssh-private-key-path" {:value (str (System/getProperty "user.home") "/.ssh/id_rsa")
+                                       :doc "The root directory where local git repositories are located for each clojure module/application/library."}
+               "workspace-root" {:value (str (System/getProperty "user.home") "/ROOT")
+                                 :doc "The path to the root directory for the workspace."}
+               "src-root-dir" {:value (str (System/getProperty "user.home") "/ROOT/src")
+                               :doc "The root directory where local git repositories are located for each clojure module/application/library."}
+               "reports-path" {:value (str (System/getProperty "user.home") "/reports")
+                               :doc "The root directory where reports are to be stored. Defaults to ~/reports"}
+               "nexus-url-base" {:value "http://nexus.root.localnet:8081/nexus/content/groups/public/root/"
+                                 :doc "The root url for checking for released versions of libraries and applications in a nexus repository"}
+               "library-namespace" {:value "root"
+                                    :doc "The namespace containing all the controlled clojure libraries, such that <library-namespace>.<library-name> is the namespace for a library."}
+               "bitbucket-root-user" {:value "root-user"
+                                      :doc "The bitbucket user that contains the git repositories under control."}
+               "default-branch" {:value "integration"
+                                 :doc "The default master branch of the git repositories."}})
 
 
 (defn write-config
@@ -39,7 +49,7 @@
    (->> (ns-publics 'utils.config)
         (keys)
         (remove #{'load-config 'write-config 'show-config 'defaults 'loaded})
-        (map #(hash-map (name %) (var-get (resolve %))))
+        (map #(hash-map (name %) (hash-map :value (var-get (resolve %)) :doc "")))
         (into (sorted-map))
         (write-config)))
   ([vals-map]
@@ -68,33 +78,19 @@
                        (clojure.edn/read-string (slurp file-path))
                        (defaults))]
     (println "Loading utils.config settings from" file-path)
-    (pprint settings-map)
     (doseq [[name-key value] settings-map]
-       (println `(def ~(symbol name-key) ~(str "\"" value "\"")))
-       (eval `(def ~(symbol name-key) ~(str value))))))
-
-;;       (map #(do
-;;              (println `(def ~(symbol (key %)) ~(str "\"" (val %) "\"")))
-;;              (eval `(def ~(symbol (key %)) ~(str (val %))))) settings-map)))
-
-;;     (->> (if (.exists (io/file file-path))
-;;            (do
-;;              (println "Loading utils.config settings from" file-path)
-;;              (clojure.edn/read-string (slurp file-path)))
-;;            (defaults))
-;;          (map #(do
-;;                  (println `(def ~(symbol (key %)) ~(str "\"" (val %) "\"")))
-;;                  (eval `(def ~(symbol (key %)) ~(str "\"" (val %) "\""))))))))
+       (eval `(def ~(symbol name-key) ~(str (:value value)))))))
 
 
 (defn show-config []
    (->> (ns-publics 'utils.config)
         (keys)
-        (remove #{'load-config 'write-config 'show-config 'defaults 'loaded})
+        (remove #{'load-config 'write-config 'show-config 'defaults })
         (filter #(= (type (resolve %)) clojure.lang.Var))
         (map #(hash-map (name %) (var-get (resolve %))))
         (into (sorted-map))
         (pprint)))
 
+
 ;Load the configuration
-(def loaded (load-config))
+(load-config)
