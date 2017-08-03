@@ -18,6 +18,13 @@
 (defonce connection-info (atom {:url "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/"}))
 
 
+(def deployable-applications
+  "A vector containing the names of applications that may be deployed in an environment."
+  ["apollo" "hinterland" "babelfish" "bifrost" "conduit"
+   "delorean" "hecate" "heimdallr" "icarus" "levski"
+   "plataea" "naranathu" "parker" "terminus" "tartarus"])
+
+
 (defn get-server-status-api-url
   "Returns the proper url for the bifrost api status.
   Can handle included or missing protocol, port, and path portions of the url"
@@ -45,17 +52,63 @@
       (#(into (sorted-map) %))))
 
 
-(defn display-env-app-versions [env-srvr]
-  (println "Application versions for" (first (string/split env-srvr #"\." 2)))
-  (pprint (get-env-app-info env-srvr))
+(defn get-env-versions
+  "Gets the application versions for the specified environment. If the environment
+  is not specified, then the versions of the local git repositories is used.
+
+  Valid string formats for the environment id can be one of the following:
+   - \"r/.*\" -- which is a release branch name.
+   - nil -- which indicates to get the versions of the local git repositories.
+   - \".*\" -- which should be a server name that hosts a bifrost status api.
+               (see 'utils.environments/get-server-status-api-url)"
+  [& [env-id]]
+  (cond
+    (nil? env-id) (-> (utils.repositories/get-repo-src-versions)
+                      (select-keys deployable-applications))
+    (string/starts-with? env-id "r/") (get-app-versions-from-manifest-properties env-id)
+    :else (-> env-id
+              (get-server-status-api-url)
+              (get-env-app-info))))
+
+(defn get-env-name
+  "Gets a displayable name for the specified environment. If the environment
+  is not specified, then it assumes that the desired environment is the local git repositories.
+
+  Valid string formats for the environment id can be one of the following:
+   - \"r/.*\" -- which is a release branch name.
+   - nil -- which indicates to get the versions of the local git repositories.
+   - \".*\" -- which should be a server name that hosts a bifrost status api.
+               (see 'utils.environments/get-server-status-api-url)"
+  [& [env-id]]
+  (cond
+    (nil? env-id) "Local git repositories"
+    (string/starts-with? env-id "r/") (str "Release " env-id)
+    :else (first (string/split env-id #"\." 2))))
+
+
+
+(defn display-env-app-versions
+  "Displays the application versions for the specified environment."
+  [env-srvr]
+  (println "Application versions for" (get-env-name env-srvr))
+  (pprint (get-env-versions env-srvr))
   (utils/log-action "(display-env-app-versions \"" env-srvr "\")"))
 
 
-(defn compare-envs [env1-srvr env2-srvr]
-  (let [env1-name (first (string/split env1-srvr #"\." 2))
-        env2-name (first (string/split env2-srvr #"\." 2))
-        env1-app-versions (get-env-app-info (get-server-status-api-url env1-srvr))
-        env2-app-versions (get-env-app-info (get-server-status-api-url env2-srvr))
+(defn compare-envs
+  "Returns a vector containing:
+    - a set of applications names present in the second environment but missing
+      from the first environment
+    - a set of applications names present in the first environment but missing
+      from the second environment
+    - a lazy sequence containing lists
+      which contain (\"<application-name>\" \"<env1-version>\" \"<env2-version>\")
+    - a map with applications names as keys and versions as values for applications
+      that are the same version in both environments
+  "
+  [env1-id & [env2-id]]
+  (let [env1-app-versions (get-env-versions env1-id)
+        env2-app-versions (get-env-versions env2-id)
         k1 (set (keys env1-app-versions))
         k2 (set (keys env2-app-versions))
         missing-in-1 (difference k2 k1)
@@ -63,25 +116,30 @@
         present-but-different (filter #(not= (env1-app-versions %) (env2-app-versions %))
                                       (intersection k1 k2))
         map-diff (map #(list % (env1-app-versions %) (env2-app-versions %))
-                    present-but-different)]
-        [missing-in-1 missing-in-2 map-diff]))
+                    present-but-different)
+        same-versions (select-keys env1-app-versions
+                                   (filter #(= (env1-app-versions %) (env2-app-versions %))
+                                           (intersection k1 k2)))]
+        [missing-in-1 missing-in-2 map-diff same-versions]))
 
 
 (defn display-env-differences
-  [env1-srvr env2-srvr]
-  (let [env1-name (first (string/split env1-srvr #"\." 2))
-        env2-name (first (string/split env2-srvr #"\." 2))
-        compare-info (compare-envs env1-srvr env2-srvr)
-        missing-in-1 (first compare-info)
-        missing-in-2 (second compare-info)
-        map-diff (last compare-info)]
-
-    (println        (cl-format nil (str "~{App ~a is missing in " env1-name "~%~}~{App ~a is missing in "
-                             env2-name "~%~}~{~{App ~a is different~%  "
-                             env1-name " -> ~a~%  " env2-name " -> ~a~%~}~}")
-                    missing-in-1
-                    missing-in-2
-                    map-diff))))
+  "Displays the application version differences between the first environment and the second environment.
+  If the second environment is not specified, then the versions of the local git repositories is used.
+  "
+  [env1-id & [env2-id]]
+  (let [env1-name (get-env-name env1-id)
+        env2-name (get-env-name env2-id)
+        [missing-in-1 missing-in-2 map-diff same-versions] (compare-envs env1-id env2-id)]
+    (println "\nComparing applications deployed in the" env1-name "environment to those in the" env2-name "environment.\n")
+    (println (cl-format nil (str "~{App ~a is missing in " env1-name "~%~}~{App ~a is missing in "
+                                 env2-name "~%~}~{~{App ~a is different~%  "
+                                 env1-name " -> ~a~%  " env2-name
+                                 " -> ~a~%~}~}~{~{App ~a is the same version in both environments:  ~a~%~}~}")
+                        missing-in-1
+                        missing-in-2
+                        map-diff
+                        same-versions))))
 
 
 (defn open-app-version-diff [app-name version1 version2]
@@ -97,10 +155,8 @@
         (browse-url url)))))
 
 
-(defn open-app-version-diffs [env1-srvr env2-srvr]
-  (let [env1-name (first (string/split env1-srvr #"\." 2))
-        env2-name (first (string/split env2-srvr #"\." 2))
-        map-diff ((last compare-envs env1-srvr env2-srvr))]
+(defn open-app-version-diffs [env1-id env2-id]
+  (let [[missing-in-1 missing-in-2 map-diff same-versions] (compare-envs env1-id env2-id)]
     (doseq [[app-name version1 version2] map-diff]
       (open-app-version-diff app-name version1 version2))))
 
@@ -120,7 +176,6 @@
 
 
 (defn download-app-war [app-name version]
-  ;; http://nexus.cenx.localnet:8081/nexus/content/groups/public/cenx/apollo/3.3.16/apollo-3.3.16.war
   (let [war-filename (str app-name "-" version ".war")
         war-url (str config/nexus-url-base app-name "/" version "/" war-filename)
         war-dir (str config/workspace-root "/warfiles")
@@ -217,7 +272,6 @@
    Updates the app versions in the docker-compose.yaml file to be the same as the server's"
   [env-srvr]
   (let [project-name "mpn"
-        env-name (first (string/split env-srvr #"\." 2))
         env-app-versions (get-env-app-info env-srvr)
         compose-yaml-file (str config/src-root-dir "/dev-env/projects/" project-name "/docker-compose.yml")
         compose-yaml-backup-file (str compose-yaml-file "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)) ".txt")
@@ -245,16 +299,23 @@
       (.load props))))
 
 
-(defn strip-hash-comments [str-check]
-  (clojure.string/trim (first (clojure.string/split str-check #"#" 2))))
+(defn strip-hash-comments-map-values
+  "Returns a map containing the same keys as the map submitted but with the string
+  values having been trimmed of any comments started with #."
+  [m]
+  (into {}
+        (for [[k v] m]
+          [k (-> v
+                 (clojure.string/split #"#" 2)
+                 (first)
+                 (clojure.string/trim ))])))
 
 
-(defn strip-hash-comments-map-values [m]
-  (into {} (for [[k v] m] [k (clojure.string/trim (first (clojure.string/split v #"#" 2)))])))
+(defn get-app-versions-from-manifest-properties
+  "Return a map containing the application versions contianed in the desired branch version of manifest.properties.
 
-
-(defn get-app-versions-from-manifest-properties [branch]
-  ; curl --user scott.ferguson@cenx.com:<pwd> https://bitbucket.org/cenx-cf/exanova/raw/906d95a8ffb5949adfabe32d6a1b1ff5fd6004f6/manifest.properties
+  For list of available release branches, run the function (see 'utils.repositories/get-release-branches)"
+  [branch]
   (try+
     (-> (str "https://bitbucket.org/" config/bitbucket-root-user "/exanova/raw/" branch "/manifest.properties")
         (client/get {:basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] })
@@ -262,9 +323,7 @@
         (.getBytes)
         (io/input-stream)
         (load-props)
-        (select-keys ["apollo" "hinterland" "babelfish" "bifrost" "conduit" "delorean"
-                      "hecate" "heimdallr" "icarus" "levski" "plataea" "naranathu"
-                      "parker" "terminus" "tartarus"])
+        (select-keys deployable-applications)
         (strip-hash-comments-map-values))
     (catch [:status 404] {}
       (println "The" branch "does not exist")
@@ -274,26 +333,3 @@
       (println (:message &throw-context))
       {})))
 
-
-(defn- example-function-calls []
-  (let [env-srvr "med16.cenx.localnet:8080"
-        env1-srvr "med02.cenx.localnet:8080"
-        env2-srvr "localhost:8082"
-        app-name "apollo"
-        version1 "3.3.18"
-        version2 "3.3.17"
-        env-url ""]
-    (get-env-app-info env-url)
-    (display-env-app-versions env-srvr)
-    (compare-envs env1-srvr env2-srvr)
-    (display-env-differences env1-srvr env2-srvr)
-    (open-app-version-diff app-name version1 version2)
-    (open-app-version-diffs env1-srvr env2-srvr)
-    (get-app-diffs-between-tags app-name version1 version2)
-    (download-app-war app-name version1)
-    (download-wars-matching-environment env-srvr)
-    (deploy-wars-matching-environment env-srvr)
-    (update-docker-compose-app-version app-name version1)
-    (update-docker-compose-app-version "mpn" app-name version1)
-    (set-docker-compose-app-version-for-env env-srvr)
-  ))

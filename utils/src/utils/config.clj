@@ -13,7 +13,7 @@
     user-root-path - The path to the user's root directory. Defaults to ~/
     workspace-root - The path to the root directory for the workspace.
 
-  Checks for the file ~/.utils.config.clj and reads the map contained within and creates matching variables in the utils.config namespace.
+  Checks for the file ~/.utils.config/.utils.config.clj and reads the map contained within and creates matching variables in the utils.config namespace.
 
   The reasons for loading configuration settings from a user specific file is to remove possibly sensitive information from the source code.
   "
@@ -21,7 +21,9 @@
   (:use [clojure.pprint])
   (:import [java.nio.file Files CopyOption]))
 
-(def config-file-path (str (System/getProperty "user.home") "/.utils.config/.utils.config.clj"))
+(def config-file-path
+  "The path for the file containing the customized configuration settings for the user."
+  (str (System/getProperty "user.home") "/.utils.config/.utils.config.clj"))
 
 (def defaults {"user-root-path" {:value (System/getProperty "user.home")
                                  :doc "The path to the user's root directory. Defaults to ~/"}
@@ -44,15 +46,23 @@
                "default-branch" {:value "integration"
                                  :doc "The default master branch of the git repositories."}})
 
+(defn get-current-config
+  "Returns a map containing configuration settings with the variable names as keys, and their values.
+  Currently on returns string and long (integer) settings."
+  []
+  (->> (ns-publics 'utils.config)
+    (filter (fn [[k v]] (not (contains? #{'load-config 'write-config 'show-config 'defaults 'loaded 'config-file-path} k))))
+    (filter (fn [[k v]] (contains? #{java.lang.String java.lang.Long} (type (var-get v)))))
+    (map (fn [[k v]] (hash-map (name k)
+                               (hash-map :value (var-get v)
+                                         :doc (get (meta v) :doc "")))))
+    (into (sorted-map))))
+
 
 (defn write-config
+  "Writes the provided map, or the current settings if a map is not provided, to the file path in 'utils.config/config-file-path"
   ([]
-   (->> (ns-publics 'utils.config)
-        (keys)
-        (remove #{'load-config 'write-config 'show-config 'defaults 'loaded})
-        (filter #(= (type (resolve %)) clojure.lang.Var))
-        (map #(hash-map (name %) (hash-map :value (var-get (resolve %)) :doc "")))
-        (into (sorted-map))
+   (->> (get-current-config)
         (write-config)))
   ([vals-map]
     (let [config-file (io/file config-file-path)
@@ -73,23 +83,24 @@
       nil)))
 
 
-(defn load-config []
+(defn load-config
+  "Loads the configuration settings in the file path in 'utils.config/config-file-path
+  If the file does not exist, it loads the default setting in 'utils.config/defaults."
+  []
   (let [settings-map (if (.exists (io/file config-file-path))
                        (clojure.edn/read-string (slurp config-file-path))
                        (defaults))]
-    (println "Loading utils.config settings from" config-file-path)
+    (println "Loading utils.config settings from" (if (.exists (io/file config-file-path)) config-file-path "the defaults"))
     (doseq [[name-key value] settings-map]
-       (eval `(def ~(symbol name-key) ~(str (:value value)))))))
+       (eval `(def ~(symbol name-key) ~(get value :doc "") ~(str (:value value)))))))
 
 
-(defn show-config []
-   (->> (ns-publics 'utils.config)
-        (keys)
-        (remove #{'load-config 'write-config 'show-config 'defaults })
-        (filter #(= (type (resolve %)) clojure.lang.Var))
-        (map #(hash-map (name %) (var-get (resolve %))))
-        (into (sorted-map))
-        (pprint)))
+(defn show-config
+  "Displays the current configuration settings."
+  []
+  (binding [*print-right-margin* 160]
+    (-> (get-current-config)
+        (pprint))))
 
 
 ;Load the configuration
