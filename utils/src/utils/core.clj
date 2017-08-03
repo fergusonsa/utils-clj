@@ -1,6 +1,8 @@
 (ns utils.core
   "Utility functions used by other namespaces in the utils project"
-  (:require [utils.config :as config])
+  (:require [utils.config :as config]
+            [clojure.string :as string])
+  (:use [clojure.pprint])
   (:gen-class))
 
 
@@ -52,3 +54,30 @@
     (if (> (count message) 0)
       (spit log-file (format "%s %-40.40s %s\n" timestamp-str calling-function message) :append (.exists (clojure.java.io/file log-file))))))
 
+
+(defn- print-function-help-info [fn-name var]
+  (let [meta-info (meta var)]
+    (print fn-name "")
+    (if (:arglists meta-info)
+      (pprint (:arglists meta-info))
+      (println))
+    (if (:doc meta-info)
+      (println " " (string/trim (:doc meta-info))))
+    (println)))
+
+
+(defn help
+  "Display the "
+  ([]
+   (help *ns*))
+  ([name-space]
+   (binding [*print-right-margin* 140]
+      (let [nm-space (if (string? name-space) (symbol name-space) name-space)]
+        (for [[fn-name var] (into (sorted-map) (ns-publics nm-space))]
+          (print-function-help-info fn-name var)))))
+  ([name-space fn-name]
+   (binding [*print-right-margin* 140]
+    (let [nm-space (if (string? name-space) (symbol name-space) name-space)
+          fnc-name (if (string? fn-name) fn-name (name fn-name))
+          var (ns-resolve nm-space (symbol fnc-name))]
+      (print-function-help-info fnc-name var)))))

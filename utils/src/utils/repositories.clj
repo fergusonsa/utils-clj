@@ -104,7 +104,7 @@
 
 
 (defn get-version-from-repo
-  ""
+  "Returns the git branch or tag for the git repository."
   [repo]
   (if (clj-jgit.porcelain/git-branch-attached? repo)
     (clj-jgit.porcelain/git-branch-current repo)
@@ -112,7 +112,7 @@
 
 
 (defn get-repo-version
-  ""
+  "Returns the git branch or tag for the specified local git repository."
   [repo-name]
   (if (.isDirectory (io/file (str config/src-root-dir "/" repo-name "/.git")))
     (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
@@ -120,13 +120,13 @@
 
 
 (defn get-repo-version-map
-  ""
+  "Returns a map with the git branch or tag for the specified local git repository."
   [repo-name]
   { repo-name (get-repo-version repo-name)})
 
 
 (defn get-repo-src-versions
-  ""
+  "Gets the git branches or tags for the specified (or all) local git repositories in the source root directory."
   [& repo-names]
   (->> (if (> (count repo-names) 0)
          (intersection (set repo-names) (set (get-repos-in-src-root)))

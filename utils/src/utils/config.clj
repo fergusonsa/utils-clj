@@ -21,6 +21,7 @@
   (:use [clojure.pprint])
   (:import [java.nio.file Files CopyOption]))
 
+(def config-file-path (str (System/getProperty "user.home") "/.utils.config/.utils.config.clj"))
 
 (def defaults {"user-root-path" {:value (System/getProperty "user.home")
                                  :doc "The path to the user's root directory. Defaults to ~/"}
@@ -49,19 +50,19 @@
    (->> (ns-publics 'utils.config)
         (keys)
         (remove #{'load-config 'write-config 'show-config 'defaults 'loaded})
+        (filter #(= (type (resolve %)) clojure.lang.Var))
         (map #(hash-map (name %) (hash-map :value (var-get (resolve %)) :doc "")))
         (into (sorted-map))
         (write-config)))
   ([vals-map]
-    (let [file-path (str (System/getProperty "user.home") "/.utils.config.clj")
-          config-file (io/file file-path)
-          backup-path (str config-file "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))]
+    (let [config-file (io/file config-file-path)
+          backup-path (str config-file-path "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))]
       (if (.exists config-file)
-        (Files/move (.toPath (io/file file-path)) (.toPath (io/file backup-path)) (into-array CopyOption {})))
-      (spit file-path (str "; auto generated config file settings. "
+        (Files/move (.toPath config-file) (.toPath (io/file backup-path)) (into-array CopyOption {})))
+      (spit config-file-path (str "; auto generated config file settings. "
                            (.format (java.text.SimpleDateFormat. "yyyy-MM-dd HH:mm:ss") (new java.util.Date))
                            "\n" ))
-      (spit file-path (prn-str vals-map) :append true)
+      (spit config-file-path (prn-str vals-map) :append true)
 
       (doto config-file
           (.setReadable false false)
@@ -73,11 +74,10 @@
 
 
 (defn load-config []
-  (let [file-path (str (System/getProperty "user.home") "/.utils.config.clj")
-        settings-map (if (.exists (io/file file-path))
-                       (clojure.edn/read-string (slurp file-path))
+  (let [settings-map (if (.exists (io/file config-file-path))
+                       (clojure.edn/read-string (slurp config-file-path))
                        (defaults))]
-    (println "Loading utils.config settings from" file-path)
+    (println "Loading utils.config settings from" config-file-path)
     (doseq [[name-key value] settings-map]
        (eval `(def ~(symbol name-key) ~(str (:value value)))))))
 
