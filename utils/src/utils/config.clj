@@ -98,9 +98,12 @@
 (defn show-config
   "Displays the current configuration settings."
   []
-  (binding [*print-right-margin* 160]
-    (-> (get-current-config)
-        (pprint))))
+  (map (fn [[k v]]
+         (println (str k " : \"" (:value v) "\""))
+         (if (:doc v)
+           (println (:doc v)))
+         (println))
+       (get-current-config)))
 
 
 ;Load the configuration
