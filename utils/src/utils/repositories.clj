@@ -10,10 +10,12 @@
             [utils.config :as config]
             [utils.identity]
             [clj-time.core :as time-core]
+            [clj-time.format :as time-format]
             [clj-time.coerce :as time-coerce]
             [clj-jgit.porcelain]
             [clj-http.client :as client]
-            [clojure.tools.nrepl :as repl])
+            [clojure.tools.nrepl :as repl]
+            [version-clj.core :as version])
   (:use [clojure.set :only [difference intersection]]
         [clojure.java.browse]
         [clojure.pprint]
@@ -69,9 +71,103 @@
                                           (:password utils.identity/identity-info)]
                              :throw-exceptions false
                              :as :json}))]
-      (concat (:values results)
-            (if (get results :next)
-              (get-release-branches :url (get results :next))))))
+      (into (sorted-map)
+            (concat (map #(sorted-map (get-in % [:target :date]) (:name %)) (:values results))
+                    (if (get results :next)
+                      (get-release-branches :url (get results :next))
+                      {})))))
+
+
+(defn get-repo-refs
+  "Returns a sequence of maps containing
+        {:name \"<branch-name>\" :target {:date \"YYYY-mm-ddTHH:MM:SS+00:00\"}}
+   for all branches that start with \"r/\" in the manifest repo."
+  [repo-name ref-type & {:keys [url-arg qualifiers]
+      :or {qualifiers ""}}]
+    (let [url (if (nil? url-arg)
+               (str "https://api.bitbucket.org/2.0/repositories/"
+                    config/bitbucket-root-user "/" repo-name "/refs/" ref-type "?" qualifiers
+                    "fields=-values.links,-values.type,-values.target.hash,"
+                    "-values.target.repository,-values.target.author,-values.target.parents,"
+                    "-values.target.links,-values.target.type,-values.target.message")
+               url-arg)
+         results (:body
+                   (client/get url
+                               {:content-type :json
+                                :basic-auth [(:user utils.identity/identity-info)
+                                             (:password utils.identity/identity-info)]
+                                :throw-exceptions false
+                                :as :json}))]
+     (into (sorted-map)
+           (concat (map #(hash-map (:name %) (get-in % [:target :date])) (:values results))
+                   (if (get results :next)
+                      (get-repo-refs repo-name ref-type :url (get results :next))
+                      {})))))
+
+
+(defn get-repo-branches
+  "
+  "
+  [repo-name & {:keys [url]
+      :or {url (str "https://api.bitbucket.org/2.0/repositories/"
+                    config/bitbucket-root-user
+                    "/" repo-name
+                    "/refs/branches"
+                    "?q=name+%7E+%22r/%22"
+                    "&fields=-values.links,-values.type,-values.target.hash,"
+                    "-values.target.repository,-values.target.author,-values.target.parents,"
+                    "-values.target.links,-values.target.type,-values.target.message")}}]
+  (println url)
+   (let [results (:body (client/get url
+                            {:content-type :json
+                             :basic-auth [(:user utils.identity/identity-info)
+                                          (:password utils.identity/identity-info)]
+                             :throw-exceptions false
+                             :as :json}))]
+      (into (sorted-map)
+            (concat (map #(hash-map (:name %) (get-in % [:target :date])) (:values results))
+                    (if (get results :next)
+                      (get-repo-branches :url (get results :next))
+                      {})))))
+
+
+;; (defn get-repo-tags-recursive
+;;   "
+;;   "
+;;   [repo-name & {:keys [url]
+;;                 :or {url (str "https://api.bitbucket.org/2.0/repositories/"
+;;                               config/bitbucket-root-user "/" repo-name "/refs/tags"
+;;                               "?fields=-values.links,-values.type,-values.target.hash,"
+;;                               "-values.target.repository,-values.target.author,-values.target.parents,"
+;;                               "-values.target.links,-values.target.type,-values.target.message")}}]
+;;   (try+
+;;     (let [results (:body (client/get url
+;;                               {:content-type :json
+;;                              :basic-auth [(:user utils.identity/identity-info)
+;;                                           (:password utils.identity/identity-info)]
+;;                              :throw-exceptions false
+;;                              :as :json}))]
+;;       (into (sorted-map)
+;;             (concat (map #(hash-map (:name %) (get-in % [:target :date])) (:values results))
+;;                     (if (get results :next)
+;;                       (get-repo-tags-recursive :url (get results :next))
+;;                       {})))))
+
+;; (defn get-repo-tags
+;;   "
+;;   "
+;;   [repo-name]
+;;   (let [url (str "https://api.bitbucket.org/2.0/repositories/"
+;;                  config/bitbucket-root-user
+;;                  "/" repo-name "/refs/tags"
+;;                  "?fields=-values.links,-values.type,-values.target.hash,"
+;;                  "-values.target.repository,-values.target.author,-values.target.parents,"
+;;                  "-values.target.links,-values.target.type,-values.target.message")]
+;;     (->> (get-repo-tags-recursive repo-name :url url)
+;;          (map #(hash-map (:name %) (get-in % [:target :date])))
+;;          (into (sorted-map)))))
+
+
 
 (defn get-repos-in-src-root
   "Returns a lazy sequence of directory names (not paths) in the utils.config/src-root-dir directory that
@@ -146,7 +242,7 @@
 
 
 (defn add-checkouts-link
-  ""
+  "Creates a symlink in the repo's checkouts directory to the library's local git repo."
   [repo-name library-name]
   (-> (str config/src-root-dir "/" repo-name "/checkouts/" library-name)
        (create-symlink (str config/src-root-dir "/" library-name))))
@@ -327,22 +423,17 @@
       (map #(set-repo-version (key %) (val %)))))
 
 
-(defn set-repo-version-same-as-env
-  "In all the local repos in the src directory to the versions of applications listed
-  in the manifest.properties in the specified branch."
-  [env-srvr]
-  (-> (environments/get-env-app-info env-srvr)
+(defn set-local-repo-versions-same-as
+  "In all the local repos in the src directory to the versions of applications in the specified environment.
+
+    Valid string formats for the environment id can be one of the following:
+   - \"r/.*\" -- which is a release branch name.
+   - nil -- which indicates to get the versions of the local git repositories.
+   - \".*\" -- which should be a server name that hosts a bifrost status api.
+               (see 'utils.environments/get-server-status-api-url)"
+  [env-id]
+  (-> (environments/get-env-versions env-id)
       (select-keys (get-repos-in-src-root))
-      (set-repo-versions)))
-
-
-(defn set-repo-version-same-as-manifest
-  "In all the local repos in the src directory to the versions of applications listed
-  in the manifest.properties in the specified branch.
-
-  For list of available release branches, run the function (see 'utils.repositories/get-release-branches)"
-  [branch]
-  (-> (environments/get-app-versions-from-manifest-properties branch)
       (set-repo-versions)))
 
 
@@ -390,7 +481,53 @@
             (let [repo (:repo (clj-jgit.porcelain/git-clone-full source-url dest-dir))]
               (set-repo-version repo library-name library-version))))))))
 
+(defn yy [[rel-date release-name]]
+            (let [rel-version (get (environments/get-app-versions-from-manifest-properties release-name) repo-name "not-included")]
+              (if (<= (version/version-compare version rel-version) 0)
+                { release-name  rel-version}
+                {})))
 
-(defn example_function_calls []
-;;   (set-repo-version-same-as-env "med16.cenx.localnet:8080")
-  )
+(defn find-manifest-containing-app-version
+  "
+
+  repo-name - The name of the repo/application.
+  version - Version of the repo/application to find releases for.
+
+  Returns a sorted map containing the release branch names as keys and the version of
+  the specified repo/application name's version in that release as value."
+  [repo-name version]
+  ; Get the time the tag for that version was created.
+   (let [formatter (time-format/formatter "yyyy-MM-dd'T'HH:mm:ss+00:00")
+         tag-date (-> (str "https://api.bitbucket.org/2.0/repositories/"
+                           config/bitbucket-root-user
+                           "/" repo-name
+                           "/refs/tags/" (utils/get-tag repo-name version)
+                           "?fields=-links,-type,-target.hash,"
+                           "-target.repository,-target.author,-target.parents,"
+                           "-target.links,-target.type,-target.message")
+                      (client/get {:content-type :json
+                                   :basic-auth [(:user utils.identity/identity-info)
+                                                (:password utils.identity/identity-info)]
+                                   :throw-exceptions false
+                                   :as :json})
+                      (get-in [:body :target :date])
+                      ((partial time-format/parse formatter)))
+         releases-after-tag-date (->> (get-release-branches)
+                                      (map (fn [[k v]] (if (time-core/after? (time-format/parse formatter v)
+                                                                             tag-date)
+                                                         {v k}
+                                                         {})))
+                                      (into (sorted-map)))]
+     (println "******")
+     (println tag-date)
+     (println "******")
+     (pprint releases-after-tag-date)
+     (println "******")
+     (into (sorted-map)
+           (map (fn [[rel-date release-name]]
+            (let [rel-version (get (environments/get-app-versions-from-manifest-properties release-name) repo-name "not-included")]
+              (if (<= (version/version-compare version rel-version) 0)
+                { release-name  rel-version}
+                {})))
+            releases-after-tag-date))))
+

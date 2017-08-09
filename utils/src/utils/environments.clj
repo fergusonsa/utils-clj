@@ -111,15 +111,18 @@
         env2-app-versions (get-env-versions env2-id)
         k1 (set (keys env1-app-versions))
         k2 (set (keys env2-app-versions))
-        missing-in-1 (difference k2 k1)
-        missing-in-2 (difference k1 k2)
+        missing-in-1 (apply sorted-set (difference k2 k1))
+        missing-in-2 (apply sorted-set (difference k1 k2))
         present-but-different (filter #(not= (env1-app-versions %) (env2-app-versions %))
                                       (intersection k1 k2))
-        map-diff (map #(list % (env1-app-versions %) (env2-app-versions %))
-                    present-but-different)
-        same-versions (select-keys env1-app-versions
+        map-diff (sort-by
+                   first
+                   (map #(list % (env1-app-versions %) (env2-app-versions %))
+                        present-but-different))
+        same-versions (into (sorted-map)
+                            (select-keys env1-app-versions
                                    (filter #(= (env1-app-versions %) (env2-app-versions %))
-                                           (intersection k1 k2)))]
+                                           (intersection k1 k2))))]
         [missing-in-1 missing-in-2 map-diff same-versions]))
 
 
