@@ -11,7 +11,7 @@
   [repo-name version]
   (if (not (string? version))
     (println "!!!!!!!!!!!!!!!!!!!!!!!! version is not string! >" version "<"))
-  (if (or (.startsWith version repo-name) (= version config/default-branch))
+  (if (or (= version config/default-branch) (.startsWith version (str repo-name "-")))
     version
     (str repo-name "-" version)))
 
@@ -32,10 +32,10 @@
 (defn get-report-file-name-path
   ""
   [prefix & {:keys [create-parents path extension subdirectory]
-                                           :or {create-parents true
-                                                path config/reports-path
-                                                extension ".txt"
-                                                subdirectory nil}}]
+             :or {create-parents true
+                  path config/reports-path
+                  extension ".txt"
+                  subdirectory nil}}]
    (let [dir-path (str (if (.endsWith path "/") path (str path "/")) (if (nil? subdirectory) "" (str subdirectory "/")))
          file-path (str dir-path prefix "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)) extension)]
      (if create-parents (clojure.java.io/make-parents file-path))
@@ -81,7 +81,7 @@
     (utils-help 'utils.config \"config\")
   "
   ([]
-   (help *ns*))
+   (utils-help *ns*))
   ([name-space & [desired-fn-name]]
    (binding [*print-right-margin* 140]
      (println)

@@ -12,7 +12,8 @@
                  [clj-jgit "0.8.9"]
                  [io.forward/yaml "1.0.6"]
                  [clojurewerkz/propertied "1.3.0"]
-                 [version-clj "0.1.2"]]
+                 [version-clj "0.1.2"]
+                 [k2nr/docker "0.0.2"]]
   :main ^:skip-aot utils.config
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

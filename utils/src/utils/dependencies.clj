@@ -320,27 +320,30 @@
         (format "%s%s { :version %s }" indent-padding (:name tree) (:version tree))))))
 
 
-(defn check-version [repo-name version]
-  (if (or (= version config/default-branch) (.startsWith version repo-name))
-    version
-    (str repo-name "-" version)))
-
-
 (defn find-module-dependencies
   ([module-name]
     (find-module-dependencies module-name config/default-branch))
   ([module-name version & {:keys [depth force-build] :or {depth 0
                                                           force-build false}}]
-    (let [proper-version (check-version module-name version)]
+    (let [proper-version (utils/get-tag module-name version)]
       (build-repo-dependency-node module-name proper-version :depth depth :force-build force-build))))
 
 
 (defn display-project-dependency-tree
+  "Creates a text file report containing a readable report showing the dependency tree
+  information for the specified repo/module name and its corresponding version.
+
+  Arguments:
+  repo-name - Desired repo/module name
+  version (optional) - The version of the repo to get dependency information for.
+                       If not supplied, the default branch is used.
+                       (See 'utils.config/default-branch)"
   ([repo-name]
     (display-project-dependency-tree repo-name config/default-branch))
   ([repo-name version]
     (let [res (find-module-dependencies repo-name version)
-          log-file (utils/get-report-file-name-path (str repo-name "-" version "-dependency-tree") :subdirectory "dependency-trees")
+          log-file (utils/get-report-file-name-path (str repo-name "-" version "-dependency-tree")
+                                                    :subdirectory "dependency-trees")
           out-str (make-tree-readable res)]
       (println out-str)
       (spit log-file out-str)
@@ -348,9 +351,21 @@
       (utils/log-action "Wrote dependency tree for " repo-name version "to" log-file))))
 
 
-(defn create-dependency-tree-reports [& args]
+(defn create-dependency-tree-reports
+  "Creates text file reports containing a readable report showing the dependency tree
+  information for the specified repo/module names and their corresponding versions.
+
+  Arguments:
+  either a map containing a repo/module name as keys and corresponding version as values,
+      or one or more pairs of strings a repo/module name and corresponding version.
+
+  (create-dependency-tree-reports {\"repo1\" \"1.0.0\", \"repo2\" \"1.0.1\", \"repo3\" \"1.1.0\", ...})
+  or
+  (create-dependency-tree-reports \"repo1\" \"1.0.0\" \"repo2\" \"1.0.1\" \"repo3\" \"1.1.0\")"
+  [& args]
   (doseq [[repo-name version] (if (map? args) args (apply hash-map args))]
-    (let [log-file (utils/get-report-file-name-path (str repo-name "-" version "-dependency-tree") :subdirectory "dependency-trees")]
+    (let [log-file (utils/get-report-file-name-path (str repo-name "-" version "-dependency-tree")
+                                                    :subdirectory "dependency-trees")]
       (->> (find-module-dependencies repo-name version)
             (make-tree-readable)
             (spit log-file))
@@ -358,7 +373,9 @@
       (utils/log-action "Wrote dependency tree for " repo-name version "to" log-file))))
 
 
-(defn coallate-dependencies-versions [deps]
+(defn coallate-dependencies-versions
+  ""
+  [deps]
   (if (map? deps)
     (if (get deps :name)
       (try+
@@ -377,14 +394,6 @@
           (println (:cause &throw-context))
           (println (:stack-trace &throw-context))
           (println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"))))
-;;       (try+
-;;         (apply merge-with into (hash-map) (map coallate-dependencies-versions (vals deps)))
-;;         (catch Object _
-;;           (println "?????????????????????????????????????")
-;;           (pprint deps)
-;;           (println (:message &throw-context))
-;;           (println (:cause &throw-context))
-;;           (println "????????????????????????????????????"))))
     (println "deps is not a map:" deps ":")))
 
 

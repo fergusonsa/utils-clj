@@ -44,7 +44,11 @@
                "bitbucket-root-user" {:value "root-user"
                                       :doc "The bitbucket user that contains the git repositories under control."}
                "default-branch" {:value "integration"
-                                 :doc "The default master branch of the git repositories."}})
+                                 :doc "The default master branch of the git repositories."}
+               "deployable-applications" {:doc "A vector containing the names of applications that may be deployed in an environment."
+                                          :value  ["apollo" "hinterland" "babelfish" "bifrost" "conduit"
+                                                   "delorean" "hecate" "heimdallr" "icarus" "levski"
+                                                   "plataea" "naranathu" "parker" "terminus" "tartarus"]}})
 
 (defn get-current-config
   "Returns a map containing configuration settings with the variable names as keys, and their values.
@@ -90,9 +94,10 @@
   (let [settings-map (if (.exists (io/file config-file-path))
                        (clojure.edn/read-string (slurp config-file-path))
                        (defaults))]
-    (println "Loading utils.config settings from" (if (.exists (io/file config-file-path)) config-file-path "the defaults"))
+;;     (println "Loading utils.config settings from" (if (.exists (io/file config-file-path)) config-file-path "the defaults"))
     (doseq [[name-key value] settings-map]
-       (eval `(def ~(symbol name-key) ~(get value :doc "") ~(str (:value value)))))))
+      (println (type (:value value)) (:value value))
+       (eval `(def ~(symbol name-key) ~(get value :doc "") ~(:value value))))))
 
 
 (defn show-config

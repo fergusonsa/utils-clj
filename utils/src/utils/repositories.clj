@@ -6,7 +6,6 @@
   (:require [clojure.java.io :as io]
             [utils.dependencies :as dependencies]
             [utils.core :as utils]
-            [utils.environments :as environments]
             [utils.config :as config]
             [utils.identity]
             [clj-time.core :as time-core]
@@ -25,7 +24,8 @@
                                         CheckoutConflictException]
            [java.nio.file Files
                           Paths]
-           [java.nio.file.attribute FileAttribute]))
+           [java.nio.file.attribute FileAttribute]
+           [java.util Properties]))
 
 
 (defn is-controlled-module?
@@ -104,6 +104,14 @@
                       (get-repo-refs repo-name ref-type :url (get results :next))
                       {})))))
 
+
+(defn get-release-docker-images []
+  (let [url "https://ship.cenx.com/#browse/search/docker=attributes.docker.imageName%3Dexanova"
+        results (:body (client/get url
+                            {:basic-auth ["scott.ferguson"
+                                          (:password utils.identity/identity-info)]
+                             :throw-exceptions false}))]
+    results))
 
 (defn get-repo-branches
   "
@@ -423,6 +431,10 @@
       (map #(set-repo-version (key %) (val %)))))
 
 
+(defn- get-env-versions [env-id]
+  ((resolve 'utils.environment/get-env-versions) env-id))
+
+
 (defn set-local-repo-versions-same-as
   "In all the local repos in the src directory to the versions of applications in the specified environment.
 
@@ -432,7 +444,7 @@
    - \".*\" -- which should be a server name that hosts a bifrost status api.
                (see 'utils.environments/get-server-status-api-url)"
   [env-id]
-  (-> (environments/get-env-versions env-id)
+  (-> (get-env-versions env-id)
       (select-keys (get-repos-in-src-root))
       (set-repo-versions)))
 
@@ -481,11 +493,49 @@
             (let [repo (:repo (clj-jgit.porcelain/git-clone-full source-url dest-dir))]
               (set-repo-version repo library-name library-version))))))))
 
-(defn yy [[rel-date release-name]]
-            (let [rel-version (get (environments/get-app-versions-from-manifest-properties release-name) repo-name "not-included")]
-              (if (<= (version/version-compare version rel-version) 0)
-                { release-name  rel-version}
-                {})))
+
+(defn load-props
+  "Given a path to a properties file, load it into a Java Properties object."
+  [readable]
+  (let [props (io/reader readable)]
+    (doto (Properties.)
+      (.load props))))
+
+
+
+(defn strip-hash-comments-map-values
+  "Returns a map containing the same keys as the map submitted but with the string
+  values having been trimmed of any comments started with #."
+  [m]
+  (into (sorted-map)
+        (for [[k v] m]
+          [k (-> v
+                 (clojure.string/split #"#" 2)
+                 (first)
+                 (clojure.string/trim ))])))
+
+
+(defn get-app-versions-from-manifest-properties
+  "Return a map containing the application versions contianed in the desired branch version of manifest.properties.
+
+  For list of available release branches, run the function (see 'utils.repositories/get-release-branches)"
+  [branch]
+  (try+
+    (-> (str "https://bitbucket.org/" config/bitbucket-root-user "/exanova/raw/" branch "/manifest.properties")
+        (client/get {:basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] })
+        (:body)
+        (.getBytes)
+        (io/input-stream)
+        (load-props)
+        (select-keys config/deployable-applications)
+        (strip-hash-comments-map-values))
+    (catch [:status 404] {}
+      (println "The" branch "does not exist")
+      {})
+    (catch Object _
+      (println "Exception trying to get app versions from manifest.properties for branch" branch)
+      (println (:message &throw-context))
+      {})))
 
 (defn find-manifest-containing-app-version
   "
@@ -525,9 +575,10 @@
      (println "******")
      (into (sorted-map)
            (map (fn [[rel-date release-name]]
-            (let [rel-version (get (environments/get-app-versions-from-manifest-properties release-name) repo-name "not-included")]
+            (let [rel-version (get (get-app-versions-from-manifest-properties release-name) repo-name "not-included")]
               (if (<= (version/version-compare version rel-version) 0)
                 { release-name  rel-version}
                 {})))
             releases-after-tag-date))))
+
 

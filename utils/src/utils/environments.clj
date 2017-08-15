@@ -6,23 +6,14 @@
             [yaml.core :as yaml]
             [utils.identity]
             [utils.core :as utils]
-            [utils.config :as config])
+            [utils.config :as config]
+            [utils.repositories :as repositories])
   (:use [clojure.set :only [difference intersection]]
         [clojure.java.browse]
         [clojure.pprint]
         [slingshot.slingshot :only [try+]])
   (:import [java.io StringReader]
            [java.util Properties]))
-
-
-(defonce connection-info (atom {:url "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/"}))
-
-
-(def deployable-applications
-  "A vector containing the names of applications that may be deployed in an environment."
-  ["apollo" "hinterland" "babelfish" "bifrost" "conduit"
-   "delorean" "hecate" "heimdallr" "icarus" "levski"
-   "plataea" "naranathu" "parker" "terminus" "tartarus"])
 
 
 (defn get-server-status-api-url
@@ -63,9 +54,9 @@
                (see 'utils.environments/get-server-status-api-url)"
   [& [env-id]]
   (cond
-    (nil? env-id) (-> (utils.repositories/get-repo-src-versions)
-                      (select-keys deployable-applications))
-    (string/starts-with? env-id "r/") (get-app-versions-from-manifest-properties env-id)
+    (nil? env-id) (-> (repositories/get-repo-src-versions)
+                      (select-keys config/deployable-applications))
+    (string/starts-with? env-id "r/") (repositories/get-app-versions-from-manifest-properties env-id)
     :else (-> env-id
               (get-server-status-api-url)
               (get-env-app-info))))
@@ -183,24 +174,29 @@
         war-url (str config/nexus-url-base app-name "/" version "/" war-filename)
         war-dir (str config/workspace-root "/warfiles")
         app-war-dir (str war-dir "/" app-name)
-        dest-path (str app-war-dir "/" war-filename)]
+        dest-path (str app-war-dir "/" war-filename)
+        alt-war-path (str config/user-root-path "/.m2/repository/" config/library-namespace "/" app-name "/" version "/" war-filename)]
     (io/make-parents dest-path)
     (if-not (.exists (io/file dest-path))
-      (do
-        (println "Downloading " war-filename " for app " app-name)
-        (try+
-          (with-open [w (io/output-stream dest-path)]
-            (.write w (:body (client/get war-url {:as :byte-array}))))
-          (catch [:status 404] {}
-            (println "The " war-filename "does not exist at" war-url))
-          (catch Object _
-            (println "++++++++++++++++++++++++++++++++++++++++++ ")
-            (println "Exception trying to copy" war-filename "from" war-url "to" dest-path)
-            (println "++++++++++++++++++++++++++++++++++++++++++ ")
-            (println (:message &throw-context))
-            (println "++++++++++++++++++++++++++++++++++++++++++ ")
-            (println (:cause &throw-context))
-            (println "++++++++++++++++++++++++++++++++++++++++++ "))))
+      (if (.exists (io/file alt-war-path))
+        (do
+          (println "Copying" war-filename "for app" app-name "from" alt-war-path)
+          (io/copy (io/file alt-war-path) (io/file dest-path)))
+        (do
+          (println "Downloading " war-filename " for app " app-name)
+          (try+
+            (with-open [w (io/output-stream dest-path)]
+              (.write w (:body (client/get war-url {:as :byte-array}))))
+            (catch [:status 404] {}
+              (println "The " war-filename "does not exist at" war-url))
+            (catch Object _
+              (println "++++++++++++++++++++++++++++++++++++++++++ ")
+              (println "Exception trying to copy" war-filename "from" war-url "to" dest-path)
+              (println "++++++++++++++++++++++++++++++++++++++++++ ")
+              (println (:message &throw-context))
+              (println "++++++++++++++++++++++++++++++++++++++++++ ")
+              (println (:cause &throw-context))
+              (println "++++++++++++++++++++++++++++++++++++++++++ ")))))
       (println "war file " war-filename " already present for app " app-name))
       (utils/log-action "Downloaded war file" war-filename "to" dest-path)))
 
@@ -293,46 +289,4 @@
             :dumper-options {:flow-style :block}))
     (utils/log-action "(set-docker-compose-app-version-for-env "\" env-srvr "\") : updated " compose-yaml-file " with versions " xx)))
 
-
-(defn load-props
-  "Given a path to a properties file, load it into a Java Properties object."
-  [readable]
-  (let [props (io/reader readable)]
-    (doto (Properties.)
-      (.load props))))
-
-
-(defn strip-hash-comments-map-values
-  "Returns a map containing the same keys as the map submitted but with the string
-  values having been trimmed of any comments started with #."
-  [m]
-  (into {}
-        (for [[k v] m]
-          [k (-> v
-                 (clojure.string/split #"#" 2)
-                 (first)
-                 (clojure.string/trim ))])))
-
-
-(defn get-app-versions-from-manifest-properties
-  "Return a map containing the application versions contianed in the desired branch version of manifest.properties.
-
-  For list of available release branches, run the function (see 'utils.repositories/get-release-branches)"
-  [branch]
-  (try+
-    (-> (str "https://bitbucket.org/" config/bitbucket-root-user "/exanova/raw/" branch "/manifest.properties")
-        (client/get {:basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] })
-        (:body)
-        (.getBytes)
-        (io/input-stream)
-        (load-props)
-        (select-keys deployable-applications)
-        (strip-hash-comments-map-values))
-    (catch [:status 404] {}
-      (println "The" branch "does not exist")
-      {})
-    (catch Object _
-      (println "Exception trying to get app versions from manifest.properties for branch" branch)
-      (println (:message &throw-context))
-      {})))
 
