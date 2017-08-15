@@ -46,9 +46,7 @@
                "default-branch" {:value "integration"
                                  :doc "The default master branch of the git repositories."}
                "deployable-applications" {:doc "A vector containing the names of applications that may be deployed in an environment."
-                                          :value  ["apollo" "hinterland" "babelfish" "bifrost" "conduit"
-                                                   "delorean" "hecate" "heimdallr" "icarus" "levski"
-                                                   "plataea" "naranathu" "parker" "terminus" "tartarus"]}})
+                                          :value  ["app1" "app2"]}})
 
 (defn get-current-config
   "Returns a map containing configuration settings with the variable names as keys, and their values.
