@@ -10,13 +10,13 @@
   The reason for loading the identity information is to keep possibly sensitive information
   out of the source code and to easily make it useable by other users without having to change code.
   "
-  (:require [utils.config :as config]
+  (:require [utils.constants :as constants]
             [clojure.java.io :as io])
   (:import [java.nio.file Files CopyOption]))
 
 
 (defn write-identity [username password]
-  (let [ident-file-path (str config/user-root-path "/.ssh/utils.bitbucket.identity")
+  (let [ident-file-path (str constants/user-root-path "/.ssh/utils.bitbucket.identity")
         ident-file (io/file ident-file-path)
         backup-path (str ident-file (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))]
     (if (.exists ident-file)
@@ -33,7 +33,7 @@
 
 
 (defn load-identity []
-  (let [ident-file-path (str config/user-root-path "/.ssh/utils.bitbucket.identity")
+  (let [ident-file-path (str constants/user-root-path "/.ssh/utils.bitbucket.identity")
         ident-file (io/file ident-file-path)]
     (if (not (.exists ident-file))
       (write-identity (. (. System getenv) get "USER") "UNKNOWN-PWD"))

@@ -1,6 +1,6 @@
 (ns utils.core
   "Utility functions used by other namespaces in the utils project"
-  (:require [utils.config :as config]
+  (:require [utils.constants :as constants]
             [clojure.string :as string])
   (:use [clojure.pprint])
   (:gen-class))
@@ -11,7 +11,7 @@
   [repo-name version]
   (if (not (string? version))
     (println "!!!!!!!!!!!!!!!!!!!!!!!! version is not string! >" version "<"))
-  (if (or (= version config/default-branch) (.startsWith version (str repo-name "-")))
+  (if (or (= version constants/default-branch) (.startsWith version (str repo-name "-")))
     version
     (str repo-name "-" version)))
 
@@ -33,7 +33,7 @@
   ""
   [prefix & {:keys [create-parents path extension subdirectory]
              :or {create-parents true
-                  path config/reports-path
+                  path constants/reports-path
                   extension ".txt"
                   subdirectory nil}}]
    (let [dir-path (str (if (.endsWith path "/") path (str path "/")) (if (nil? subdirectory) "" (str subdirectory "/")))
@@ -47,7 +47,7 @@
   [& args]
   (let [message (apply str args)
         calling-function (nth (callers) 3)
-        log-file (str config/reports-path "/action-logs/action-log-" (.format (java.text.SimpleDateFormat. "yyyyMMdd") (new java.util.Date)) ".txt")
+        log-file (str constants/reports-path "/action-logs/action-log-" (.format (java.text.SimpleDateFormat. "yyyyMMdd") (new java.util.Date)) ".txt")
         timestamp-str (.format (java.text.SimpleDateFormat. "yyyy-MM-dd HH:mm:ss") (new java.util.Date))]
     (if (> (count message) 0)
       (spit log-file (format "%s %-40.40s %s\n" timestamp-str calling-function message) :append (.exists (clojure.java.io/file log-file))))))
@@ -76,9 +76,9 @@
   Examples:
     (utils-help)
     (utils-help *ns*)
-    (utils-help 'utils.config)
-    (utils-help 'utils.config \"load-config\")
-    (utils-help 'utils.config \"config\")
+    (utils-help 'utils.constants)
+    (utils-help 'utils.constants \"load-constants\")
+    (utils-help 'utils.constants \"constants\")
   "
   ([]
    (utils-help *ns*))

@@ -1,11 +1,12 @@
-(ns utils.local-environment
+(ns utils.configuration
   (:require [clojure.java.io :as io]
             [utils.environments :as environments]
             [utils.repositories :as repositories]
-            [utils.config :as config]
+            [utils.constants :as constants]
             [clj-time.core :as time-core]
             [clj-time.format :as time-format]
-            [utils.fake :as creds])
+            [utils.fake :as creds]
+            [utils.core :as utils])
   (:use [clojure.pprint]
         [clojure.set :only [difference intersection]]
         [slingshot.slingshot :only [try+]]))
@@ -148,14 +149,24 @@
 
 
 (defn check-config-settings
-  "Displays the current settings for the apps/modules in the /opt/cenx/application directory."
+  "Displays the current settings for the apps/modules in the /opt/cenx/application directory or in the source repositories.
+
+  Arguments:
+  location - optional - if this is \"source\" then config files in the local repositories are modified,
+             else the config files in the central config location are modified. Defaults to the central config location.
+  cnfgs-names-to-check - optional list of 0 or more repository names to modify the configs for."
   ([]
-   (check-config-settings (keys configs-to-check)))
-  ([& cnfgs-names-to-check]
-    (println "\nConfig settings in" config-path-root "- " (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n")
-    (doseq [[app-name details] (select-keys configs-to-check (if (seq? (first cnfgs-names-to-check)) (first cnfgs-names-to-check) cnfgs-names-to-check))]
-      (check-config-file app-name (str config-path-root "/" app-name "/" (:file-name details)) details)
-      (println))))
+   (check-config-settings "central" (keys configs-to-check)))
+  ([location & cnfgs-names-to-check]
+   (if (= location "source")
+     (println "\nConfig settings in source repositories - " (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n")
+     (println "\nConfig settings in" config-path-root "- " (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n"))
+   (doseq [[app-name details] (select-keys configs-to-check (if (seq? (first cnfgs-names-to-check)) (first cnfgs-names-to-check) cnfgs-names-to-check))]
+     (let [file-path (if (= location "source")
+                       (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
+                       (str config-path-root "/" app-name "/" (:file-name details)))]
+        (check-config-file app-name file-path details)
+        (println)))))
 
 
 (defn check-source-config-settings
@@ -168,5 +179,60 @@
       (doseq [[app-name details] (select-keys configs-to-check repos-to-check)]
         (if (and (not (nil? (:source-config-path details))) (not= "" (:source-config-path details)))
           (do
-            (check-config-file app-name (str config/workspace-root "/src/" app-name "/" (:source-config-path details)) details)
+            (check-config-file app-name (str constants/workspace-root "/src/" app-name "/" (:source-config-path details)) details)
             (println)))))))
+
+(defn replace-source-config-setting
+  ""
+  [old-value new-value & cnfgs-names-to-check]
+    (let [repos-to-check (if (> (count cnfgs-names-to-check) 0)
+                           (intersection (set cnfgs-names-to-check) (set (repositories/get-repos-in-src-root)) (set (keys configs-to-check)))
+                           (intersection (set (repositories/get-repos-in-src-root)) (set (keys configs-to-check))))]
+      (doseq [[app-name details] (select-keys configs-to-check repos-to-check)]
+        (let [file-path (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))]
+        (if (and (not (nil? (:source-config-path details)))
+                 (not= "" (:source-config-path details))
+                 (.exists (io/file file-path)))
+          (let [file-contents (slurp file-path)
+                new-contents (.replace file-contents old-value new-value)]
+;;             (println "***************" file-path)
+;;             (println file-contents)
+;;             (println "***************")
+;;             (println file-contents)
+;;             (println "***************")
+            (if (not= file-contents new-contents)
+              (do
+                (spit file-path new-contents)
+                (println "replaced config setting '" old-value"' with '" new-value "' in file " file-path)
+                (utils/log-action "replaced config setting '" old-value"' with '" new-value "' in file " file-path))
+              (println "No changes in file " file-path)))
+          (println file-path "does not exist!"))))))
+
+
+(defn replace-config-setting
+  "
+  arguments:
+  location - if this is \"source\" then config files in the local repositories are modified,
+             else the config files in the central config location are modified.
+  old-value - string to be replaced
+  new-value - replacement string
+  cnfgs-names-to-check - optional list of 0 or more repository names to modify the configs for."
+  [location old-value new-value & cnfgs-names-to-check]
+    (let [repos-to-check (if (> (count cnfgs-names-to-check) 0)
+                           (intersection (set cnfgs-names-to-check) (set (repositories/get-repos-in-src-root)) (set (keys configs-to-check)))
+                           (intersection (set (repositories/get-repos-in-src-root)) (set (keys configs-to-check))))]
+      (doseq [[app-name details] (select-keys configs-to-check repos-to-check)]
+        (let [file-path (if (= location "source")
+                          (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
+                          (str config-path-root "/" app-name "/" (:file-name details)))]
+        (if (and (not (nil? (:source-config-path details)))
+                 (not= "" (:source-config-path details))
+                 (.exists (io/file file-path)))
+          (let [file-contents (slurp file-path)
+                new-contents (.replace file-contents old-value new-value)]
+            (if (not= file-contents new-contents)
+              (do
+                (spit file-path new-contents)
+                (println (str "replaced config setting '" old-value"' with '" new-value "' in file " file-path))
+                (utils/log-action "replaced config setting '" old-value"' with '" new-value "' in file " file-path))
+              (println "No changes in file " file-path))))))))

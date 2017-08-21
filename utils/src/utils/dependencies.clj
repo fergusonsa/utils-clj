@@ -7,16 +7,16 @@
             [clojure.string]
             [utils.core :as utils]
             [utils.identity]
-            [utils.config :as config]
+            [utils.constants :as constants]
             [version-clj.core :as version])
   (:use clojure.pprint
         clojure.core
         [clojure.set :only [difference intersection]]
         [slingshot.slingshot :only [try+]]))
 
-(def build-repo-dependency-node-repo-root (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/"))
+(def build-repo-dependency-node-repo-root (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/"))
 
-(defonce connection-info (atom {:url (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/")}))
+(defonce connection-info (atom {:url (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/")}))
 
 (defonce library_info (atom {}))
 
@@ -106,7 +106,7 @@
 (defn get-original-project-clj [repo-name branch]
   ; Get the source for the project.clj file
   ; curl --user scott.ferguson@cenx.com:<pwd> https://api.bitbucket.org/1.0/repositories/cenx-cf/ares/raw/integration/project.clj
-  (clojure.string/trim (:body (client/get (str "https://api.bitbucket.org/1.0/repositories/" config/bitbucket-root-user "/" repo-name "/raw/" branch "/project.clj")
+  (clojure.string/trim (:body (client/get (str "https://api.bitbucket.org/1.0/repositories/" constants/bitbucket-root-user "/" repo-name "/raw/" branch "/project.clj")
                                           {:basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] }))))
 
 (defn get-project-dependencies [conn-info repo-name branch slug]
@@ -143,7 +143,7 @@
         :no-project-clj-file)
       (catch Object _
         (println "++++++++++++++++++++++++++++++++++++++++++ ")
-        (println "Exception trying to get project.clj file for repo " repo-name (str "https://api.bitbucket.org/1.0/repositories/" config/bitbucket-root-user "/" slug "/raw/" branch "/project.clj"))
+        (println "Exception trying to get project.clj file for repo " repo-name (str "https://api.bitbucket.org/1.0/repositories/" constants/bitbucket-root-user "/" slug "/raw/" branch "/project.clj"))
         (println "++++++++++++++++++++++++++++++++++++++++++ ")
         (println (:message &throw-context))
         (println "++++++++++++++++++++++++++++++++++++++++++ ")
@@ -217,7 +217,7 @@
 
   ([page]
     (if (integer? page)
-      (swap! connection-info assoc :url (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/?page=" page)))
+      (swap! connection-info assoc :url (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/?page=" page)))
     (-main)))
 
 
@@ -225,7 +225,7 @@
   (for [repo-name repos]
     (do
       (println "Getting dependency info for repo " repo-name)
-      (let [deps (get-project-dependencies @connection-info repo-name config/default-branch repo-name)]
+      (let [deps (get-project-dependencies @connection-info repo-name constants/default-branch repo-name)]
         (pprint (into (sorted-map) deps))
         (println ""))))
   (utils/log-action "(display-project-dependencies \"" (apply str (interpose "," repos)) "\")"))
@@ -267,7 +267,7 @@
 
 (defn build-repo-dependency-node [module-name version & {:keys [depth force-build] :or {depth 0
                                                                                       force-build false}}]
-  (let [repo-name (if (.startsWith module-name (str config/library-namespace "/")) (subs module-name (count (str config/library-namespace "/"))) module-name)
+  (let [repo-name (if (.startsWith module-name (str constants/library-namespace "/")) (subs module-name (count (str constants/library-namespace "/"))) module-name)
         tag (utils/get-tag repo-name version)
         deps (get-project-dependencies @connection-info repo-name tag repo-name)
         deps2 (if (keyword? deps) {} deps)
@@ -291,11 +291,11 @@
 (defn build-dependency-node [module-name version & {:keys [depth force-build] :or {depth 0
                                                                                    force-build false}}]
 ;;   (println "building node for \"" module-name "\" version \"" version "\" and depth" depth "and force-build" force-build)
-  (let [sub-name (if (.startsWith module-name (str config/library-namespace "/")) (subs module-name (count (str config/library-namespace "/"))) module-name)]
+  (let [sub-name (if (.startsWith module-name (str constants/library-namespace "/")) (subs module-name (count (str constants/library-namespace "/"))) module-name)]
     (let [already-saved-node (get-in @repository-dependency-info [sub-name version])]
       (if (and already-saved-node (not force-build))
         already-saved-node
-        (if (.startsWith module-name (str config/library-namespace "/"))
+        (if (.startsWith module-name (str constants/library-namespace "/"))
           (if (not= 1 depth) (build-repo-dependency-node module-name version :depth (dec depth) :force-build force-build))
           (build-external-dependency-node module-name version))))))
 
@@ -322,7 +322,7 @@
 
 (defn find-module-dependencies
   ([module-name]
-    (find-module-dependencies module-name config/default-branch))
+    (find-module-dependencies module-name constants/default-branch))
   ([module-name version & {:keys [depth force-build] :or {depth 0
                                                           force-build false}}]
     (let [proper-version (utils/get-tag module-name version)]
@@ -337,9 +337,9 @@
   repo-name - Desired repo/module name
   version (optional) - The version of the repo to get dependency information for.
                        If not supplied, the default branch is used.
-                       (See 'utils.config/default-branch)"
+                       (See 'utils.constants/default-branch)"
   ([repo-name]
-    (display-project-dependency-tree repo-name config/default-branch))
+    (display-project-dependency-tree repo-name constants/default-branch))
   ([repo-name version]
     (let [res (find-module-dependencies repo-name version)
           log-file (utils/get-report-file-name-path (str repo-name "-" version "-dependency-tree")

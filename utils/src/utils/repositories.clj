@@ -6,7 +6,7 @@
   (:require [clojure.java.io :as io]
             [utils.dependencies :as dependencies]
             [utils.core :as utils]
-            [utils.config :as config]
+            [utils.constants :as constants]
             [utils.identity]
             [clj-time.core :as time-core]
             [clj-time.format :as time-format]
@@ -31,11 +31,11 @@
 (defn is-controlled-module?
   "Checks to see if the module is a controlled module using the following rules:
   - if the module is in the utils.dependencies-scraper/repository-dependency-info,
-    and the :full-name that starts with the utils.config/library-namespace setting."
+    and the :full-name that starts with the utils.constants/library-namespace setting."
   [module-name]
   (if-let [dep-info (get @dependencies/repository-dependency-info module-name)]
     (if-let [full-name (get (second (first dep-info)) :full-name)]
-      (.startsWith full-name (str config/library-namespace "/"))
+      (.startsWith full-name (str constants/library-namespace "/"))
       false)
     false))
 
@@ -43,10 +43,10 @@
 (defn get-repo
   "Helper method for getting a clj-jgit Git instance for the local git
   repository with the specified repo-name.
-  If the root-path is not provided, uses the config/src-root-dir setting as
+  If the root-path is not provided, uses the constants/src-root-dir setting as
   the directory where the repository is localed."
   ([repo-name]
-   (get-repo config/src-root-dir repo-name))
+   (get-repo constants/src-root-dir repo-name))
   ([root-path repo-name]
    (if (.isFile (io/file (str root-path "/" repo-name "/.git")))
      (clj-jgit.porcelain/with-repo (str root-path "/" repo-name)
@@ -60,7 +60,7 @@
    for all branches that start with \"r/\" in the manifest repo."
   [& {:keys [url]
       :or {url (str "https://api.bitbucket.org/2.0/repositories/"
-                    config/bitbucket-root-user
+                    constants/bitbucket-root-user
                     "/exanova/refs/branches?q=name+%7E+%22r/%22"
                     "&fields=-values.links,-values.type,-values.target.hash,"
                     "-values.target.repository,-values.target.author,-values.target.parents,"
@@ -86,7 +86,7 @@
       :or {qualifiers ""}}]
     (let [url (if (nil? url-arg)
                (str "https://api.bitbucket.org/2.0/repositories/"
-                    config/bitbucket-root-user "/" repo-name "/refs/" ref-type "?" qualifiers
+                    constants/bitbucket-root-user "/" repo-name "/refs/" ref-type "?" qualifiers
                     "fields=-values.links,-values.type,-values.target.hash,"
                     "-values.target.repository,-values.target.author,-values.target.parents,"
                     "-values.target.links,-values.target.type,-values.target.message")
@@ -118,7 +118,7 @@
   "
   [repo-name & {:keys [url]
       :or {url (str "https://api.bitbucket.org/2.0/repositories/"
-                    config/bitbucket-root-user
+                    constants/bitbucket-root-user
                     "/" repo-name
                     "/refs/branches"
                     "?q=name+%7E+%22r/%22"
@@ -144,7 +144,7 @@
 ;;   "
 ;;   [repo-name & {:keys [url]
 ;;                 :or {url (str "https://api.bitbucket.org/2.0/repositories/"
-;;                               config/bitbucket-root-user "/" repo-name "/refs/tags"
+;;                               constants/bitbucket-root-user "/" repo-name "/refs/tags"
 ;;                               "?fields=-values.links,-values.type,-values.target.hash,"
 ;;                               "-values.target.repository,-values.target.author,-values.target.parents,"
 ;;                               "-values.target.links,-values.target.type,-values.target.message")}}]
@@ -166,7 +166,7 @@
 ;;   "
 ;;   [repo-name]
 ;;   (let [url (str "https://api.bitbucket.org/2.0/repositories/"
-;;                  config/bitbucket-root-user
+;;                  constants/bitbucket-root-user
 ;;                  "/" repo-name "/refs/tags"
 ;;                  "?fields=-values.links,-values.type,-values.target.hash,"
 ;;                  "-values.target.repository,-values.target.author,-values.target.parents,"
@@ -178,12 +178,12 @@
 
 
 (defn get-repos-in-src-root
-  "Returns a lazy sequence of directory names (not paths) in the utils.config/src-root-dir directory that
+  "Returns a lazy sequence of directory names (not paths) in the utils.constants/src-root-dir directory that
   meet the following rules:
   - Contains a .git sub-directory.
   - Contains a project.clj file."
   []
-  (let [directory (clojure.java.io/file config/src-root-dir)]
+  (let [directory (clojure.java.io/file constants/src-root-dir)]
     (map #(.getName %) (filter #(and (.isDirectory (clojure.java.io/file %))
                                      (.isDirectory (clojure.java.io/file (str % "/.git")))
                                      (.isFile (clojure.java.io/file (str % "/project.clj"))))
@@ -218,8 +218,8 @@
 (defn get-repo-version
   "Returns the git branch or tag for the specified local git repository."
   [repo-name]
-  (if (.isDirectory (io/file (str config/src-root-dir "/" repo-name "/.git")))
-    (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
+  (if (.isDirectory (io/file (str constants/src-root-dir "/" repo-name "/.git")))
+    (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
       (get-version-from-repo repo))))
 
 
@@ -252,8 +252,8 @@
 (defn add-checkouts-link
   "Creates a symlink in the repo's checkouts directory to the library's local git repo."
   [repo-name library-name]
-  (-> (str config/src-root-dir "/" repo-name "/checkouts/" library-name)
-       (create-symlink (str config/src-root-dir "/" library-name))))
+  (-> (str constants/src-root-dir "/" repo-name "/checkouts/" library-name)
+       (create-symlink (str constants/src-root-dir "/" library-name))))
 
 
 (defn remove-checkouts-link
@@ -263,8 +263,8 @@
   (->> (if (and (not (nil? library-names))
                (> (count library-names) 0))
          library-names
-         (check-for-checkouts-directory (str config/src-root-dir "/" repo-name)))
-       (map #(if (.delete (io/file (str config/src-root-dir "/" repo-name "/checkouts/" %)))
+         (check-for-checkouts-directory (str constants/src-root-dir "/" repo-name)))
+       (map #(if (.delete (io/file (str constants/src-root-dir "/" repo-name "/checkouts/" %)))
                (do
                  (println "Deleted checkouts link for" % "in repo" repo-name)
                  (utils/log-action "Deleted checkouts link for" % "in repo" repo-name))
@@ -275,7 +275,7 @@
   "Returns a map contianing the names of modules linked to in the checkouts directory
   as keys and their corresponding versions as values."
   [repo-name]
-  (->> (str config/src-root-dir "/" repo-name)
+  (->> (str constants/src-root-dir "/" repo-name)
        (check-for-checkouts-directory)
        (map get-repo-version-map)
        (into {})))
@@ -314,36 +314,36 @@
   ([repo-name version]
     (checkout-version-from-repo repo-name version (utils/get-tag repo-name version)))
   ([repo-name version proper-version]
-    (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
+    (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
       (checkout-version-from-repo repo repo-name version proper-version)))
   ([repo repo-name version proper-version]
     (try+
       (clj-jgit.porcelain/git-checkout repo (str "tags/" proper-version))
       (println "Repo" repo-name "now set to version" version)
-      (if (check-for-running-repl? (str config/src-root-dir "/" repo-name))
+      (if (check-for-running-repl? (str constants/src-root-dir "/" repo-name))
         (println "  - There is currently a repl running for this repo. It should be restarted to load changes."))
       (let [linked-repo-versions (get-linked-repo-versions repo-name)]
         (if (> (count linked-repo-versions) 0)
           (do
             (println "  - checkouts directory present with links to the following modules:")
             (pprint linked-repo-versions))))
-      (utils/log-action "set local repo" (str config/src-root-dir "/" repo-name) "to version" version)
+      (utils/log-action "set local repo" (str constants/src-root-dir "/" repo-name) "to version" version)
       (catch RefNotFoundException e#
         ;; Check to see if a fetch has been done in the past hour. If it has not, perform fetch and try to checkout again
         (if (time-core/before?
-              (time-coerce/from-long (.lastModified (io/file (str config/src-root-dir "/apollo/.git/FETCH_HEAD"))))
+              (time-coerce/from-long (.lastModified (io/file (str constants/src-root-dir "/apollo/.git/FETCH_HEAD"))))
               (time-core/minus (time-core/now) (time-core/hours 1)))
           (do
             (clj-jgit.porcelain/with-identity {
-                :private (slurp config/ssh-private-key-path)
-                :public (slurp config/ssh-public-key-path)
+                :private (slurp constants/ssh-private-key-path)
+                :public (slurp constants/ssh-public-key-path)
                 :passphrase (:password utils.identity/identity-info)
                 :exclusive true}
                 (clj-jgit.porcelain/git-fetch-all repo))
             (checkout-version-from-repo repo repo-name version proper-version))
           (do
             (println "\n** Could not checkout/find the version" version "for repo" repo-name)
-            (println "** Need to manually perform \"git fetch\" in " (str config/src-root-dir "/" repo-name) "\n")))))))
+            (println "** Need to manually perform \"git fetch\" in " (str constants/src-root-dir "/" repo-name) "\n")))))))
 
 
 (defn set-repo-version
@@ -360,8 +360,8 @@
   7. Get new current status and print appropriate messages.
   "
   ([repo-name version]
-   (if (.isDirectory (io/file (str config/src-root-dir "/" repo-name)))
-     (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
+   (if (.isDirectory (io/file (str constants/src-root-dir "/" repo-name)))
+     (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
        (set-repo-version repo repo-name version))
      (println "There is not a local repo for" repo-name)))
 
@@ -377,12 +377,12 @@
             (clj-jgit.porcelain/git-create-stash repo)
             (catch StashApplyFailureException e#
               (println "\n** Exception trying to stash existing changes in the repo" repo-name)
-              (println "** Check for existing conflicts in" (str config/src-root-dir "/" repo-name)))))
+              (println "** Check for existing conflicts in" (str constants/src-root-dir "/" repo-name)))))
         (try+
           (checkout-version-from-repo repo repo-name version proper-version)
           (catch RefNotFoundException e#
             (println "\n** Could not checkout/find the version" version "for repo" repo-name)
-            (println "** Need to manually perform \"git fetch\" in " (str config/src-root-dir "/" repo-name) "\n"))
+            (println "** Need to manually perform \"git fetch\" in " (str constants/src-root-dir "/" repo-name) "\n"))
           (catch CheckoutConflictException e#
             (println "\n** Could not checkout version" version "for repo " repo-name "due to conflicts.")
             (println (:message &throw-context) "\n")))
@@ -402,7 +402,7 @@
                   (map (partial clj-jgit.porcelain/git-reset repo "HEAD" nil) unmerged-paths))))
             (catch StashApplyFailureException e#
               (println "\n** Applying stashed changes resulted in a conflict in the repo" repo-name)
-              (println "** Check the conflicts in" (str config/src-root-dir "/" repo-name) "\n")))))
+              (println "** Check the conflicts in" (str constants/src-root-dir "/" repo-name) "\n")))))
       (println "Repo" repo-name "is already set to" version))
     (let [new-status (clj-jgit.porcelain/git-status repo)
           new-status-count (apply + (map #(count (second %))
@@ -465,19 +465,19 @@
 (defn get-library-repos-for-module
 "Currently limited to direct dependency libraries, NOT nested libraries"
   ([repo-name]
-    (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
+    (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
       (get-library-repos-for-module repo-name (clj-jgit.porcelain/git-branch-current repo))))
   ([repo-name version]
     (let [deps (dependencies/find-module-dependencies repo-name version)
           coll-deps (dependencies/coallate-dependencies-versions deps)
           modules-to-check (select-keys coll-deps (filter is-controlled-module? (keys coll-deps)))
           modules-versions (into {} (map (fn [m] {(key m) (last (val m))}) modules-to-check))]
-      (clj-jgit.porcelain/with-repo (str config/src-root-dir "/" repo-name)
+      (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
         (map #(get-library-repos-for-module repo-name version (key %) (val %)) modules-versions))))
   ([repo-name version library-name library-version]
-    (let [dest-dir (str config/src-root-dir "/" library-name)
-          source-url (str "git@bitbucket.org:" config/bitbucket-root-user"/" library-name ".git")
-          repo-dir (str config/src-root-dir "/" repo-name)
+    (let [dest-dir (str constants/src-root-dir "/" library-name)
+          source-url (str "git@bitbucket.org:" constants/bitbucket-root-user"/" library-name ".git")
+          repo-dir (str constants/src-root-dir "/" repo-name)
           checkouts-dir (str repo-dir "/checkouts")]
       (if (.isDirectory (clojure.java.io/file dest-dir))
         (do ;; A local git repo for library module already exists. Just checkout the desired version.
@@ -486,8 +486,8 @@
         (do ;; There is not an existing git repo for this library. Clone it and checkout the desired version.
           (println "Library repo" library-name "does not exists in" dest-dir "and will be cloned from bitbucket")
           (io/make-parents dest-dir)
-          (clj-jgit.porcelain/with-identity {:private (slurp config/ssh-private-key-path)
-                                             :public (slurp config/ssh-public-key-path)
+          (clj-jgit.porcelain/with-identity {:private (slurp constants/ssh-private-key-path)
+                                             :public (slurp constants/ssh-public-key-path)
                                              :passphrase (:password utils.identity/identity-info)
                                              :exclusive true}
             (let [repo (:repo (clj-jgit.porcelain/git-clone-full source-url dest-dir))]
@@ -521,13 +521,13 @@
   For list of available release branches, run the function (see 'utils.repositories/get-release-branches)"
   [branch]
   (try+
-    (-> (str "https://bitbucket.org/" config/bitbucket-root-user "/exanova/raw/" branch "/manifest.properties")
+    (-> (str "https://bitbucket.org/" constants/bitbucket-root-user "/exanova/raw/" branch "/manifest.properties")
         (client/get {:basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] })
         (:body)
         (.getBytes)
         (io/input-stream)
         (load-props)
-        (select-keys config/deployable-applications)
+        (select-keys constants/deployable-applications)
         (strip-hash-comments-map-values))
     (catch [:status 404] {}
       (println "The" branch "does not exist")
@@ -549,7 +549,7 @@
   ; Get the time the tag for that version was created.
    (let [formatter (time-format/formatter "yyyy-MM-dd'T'HH:mm:ss+00:00")
          tag-date (-> (str "https://api.bitbucket.org/2.0/repositories/"
-                           config/bitbucket-root-user
+                           constants/bitbucket-root-user
                            "/" repo-name
                            "/refs/tags/" (utils/get-tag repo-name version)
                            "?fields=-links,-type,-target.hash,"

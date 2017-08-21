@@ -1,7 +1,7 @@
-(ns utils.config
+(ns utils.constants
   "This namespae contains the constants and configurations that can change between users and projects.
 
-  The default set of configuration settings are:
+  The default set of constants/configuration settings are:
     bitbucket-root-user - The bitbucket user that contains the git repositories under control.
     default-branch - The default master branch of the git repositories.
     library-namespace - The namespace containing all the controlled clojure libraries, such that <library-namespace>.<library-name> is the namespace for a library.
@@ -12,18 +12,19 @@
     ssh-public-key-path - The path to the public rsa key file. Defaults to ~/.ssh/id_rsa.pub
     user-root-path - The path to the user's root directory. Defaults to ~/
     workspace-root - The path to the root directory for the workspace.
+    deployable-applications - A vector containing the names of applications that may be deployed in an environment.
 
-  Checks for the file ~/.utils.config/.utils.config.clj and reads the map contained within and creates matching variables in the utils.config namespace.
+  Checks for the file ~/.utils.constants/.utils.constants.clj and reads the map contained within and creates matching variables in the utils.constants namespace.
 
-  The reasons for loading configuration settings from a user specific file is to remove possibly sensitive information from the source code.
+  The reasons for loading constants/configuration settings from a user specific file is to remove possibly sensitive information from the source code.
   "
   (:require [clojure.java.io :as io])
   (:use [clojure.pprint])
   (:import [java.nio.file Files CopyOption]))
 
-(def config-file-path
+(def constants-file-path
   "The path for the file containing the customized configuration settings for the user."
-  (str (System/getProperty "user.home") "/.utils.config/.utils.config.clj"))
+  (str (System/getProperty "user.home") "/.utils.constants/.utils.constants.clj"))
 
 (def defaults {"user-root-path" {:value (System/getProperty "user.home")
                                  :doc "The path to the user's root directory. Defaults to ~/"}
@@ -48,12 +49,12 @@
                "deployable-applications" {:doc "A vector containing the names of applications that may be deployed in an environment."
                                           :value  ["app1" "app2"]}})
 
-(defn get-current-config
-  "Returns a map containing configuration settings with the variable names as keys, and their values.
+(defn get-current-constants
+  "Returns a map containing constants/configuration settings with the variable names as keys, and their values.
   Currently on returns string and long (integer) settings."
   []
-  (->> (ns-publics 'utils.config)
-    (filter (fn [[k v]] (not (contains? #{'load-config 'write-config 'show-config 'defaults 'loaded 'config-file-path} k))))
+  (->> (ns-publics 'utils.constants)
+    (filter (fn [[k v]] (not (contains? #{'load-constants 'write-constants 'show-constants 'defaults 'loaded 'constants-file-path} k))))
     (filter (fn [[k v]] (contains? #{java.lang.String java.lang.Long} (type (var-get v)))))
     (map (fn [[k v]] (hash-map (name k)
                                (hash-map :value (var-get v)
@@ -61,22 +62,22 @@
     (into (sorted-map))))
 
 
-(defn write-config
-  "Writes the provided map, or the current settings if a map is not provided, to the file path in 'utils.config/config-file-path"
+(defn write-constants
+  "Writes the provided map, or the current settings if a map is not provided, to the file path in 'utils.constants/config-file-path"
   ([]
-   (->> (get-current-config)
-        (write-config)))
+   (->> (get-current-constants)
+        (write-constants)))
   ([vals-map]
-    (let [config-file (io/file config-file-path)
-          backup-path (str config-file-path "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))]
-      (if (.exists config-file)
-        (Files/move (.toPath config-file) (.toPath (io/file backup-path)) (into-array CopyOption {})))
-      (spit config-file-path (str "; auto generated config file settings. "
+    (let [constants-file (io/file constants-file-path)
+          backup-path (str constants-file-path "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))]
+      (if (.exists constants-file)
+        (Files/move (.toPath constants-file) (.toPath (io/file backup-path)) (into-array CopyOption {})))
+      (spit constants-file-path (str "; auto generated config file settings. "
                            (.format (java.text.SimpleDateFormat. "yyyy-MM-dd HH:mm:ss") (new java.util.Date))
                            "\n" ))
-      (spit config-file-path (prn-str vals-map) :append true)
+      (spit constants-file-path (prn-str vals-map) :append true)
 
-      (doto config-file
+      (doto constants-file
           (.setReadable false false)
           (.setWritable false false)
           (.setReadable true)
@@ -85,29 +86,28 @@
       nil)))
 
 
-(defn load-config
-  "Loads the configuration settings in the file path in 'utils.config/config-file-path
-  If the file does not exist, it loads the default setting in 'utils.config/defaults."
+(defn load-constants
+  "Loads the constants/configuration settings in the file path in 'utils.constants/constants-file-path
+  If the file does not exist, it loads the default setting in 'utils.constants/defaults."
   []
-  (let [settings-map (if (.exists (io/file config-file-path))
-                       (clojure.edn/read-string (slurp config-file-path))
+  (let [settings-map (if (.exists (io/file constants-file-path))
+                       (clojure.edn/read-string (slurp constants-file-path))
                        (defaults))]
-;;     (println "Loading utils.config settings from" (if (.exists (io/file config-file-path)) config-file-path "the defaults"))
+;;     (println "Loading utils.constants settings from" (if (.exists (io/file constants-file-path)) constants-file-path "the defaults"))
     (doseq [[name-key value] settings-map]
-      (println (type (:value value)) (:value value))
+;;       (println (type (:value value)) (:value value))
        (eval `(def ~(symbol name-key) ~(get value :doc "") ~(:value value))))))
 
 
-(defn show-config
-  "Displays the current configuration settings."
+(defn show-constants
+  "Displays the current constants/configuration settings."
   []
   (map (fn [[k v]]
          (println (str k " : \"" (:value v) "\""))
          (if (:doc v)
            (println (:doc v)))
          (println))
-       (get-current-config)))
-
+       (get-current-constants)))
 
 ;Load the configuration
-(load-config)
+(load-constants)

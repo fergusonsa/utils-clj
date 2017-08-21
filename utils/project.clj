@@ -14,6 +14,6 @@
                  [clojurewerkz/propertied "1.3.0"]
                  [version-clj "0.1.2"]
                  [k2nr/docker "0.0.2"]]
-  :main ^:skip-aot utils.config
+  :main ^:skip-aot utils.main
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

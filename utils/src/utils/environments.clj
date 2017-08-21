@@ -6,7 +6,7 @@
             [yaml.core :as yaml]
             [utils.identity]
             [utils.core :as utils]
-            [utils.config :as config]
+            [utils.constants :as constants]
             [utils.repositories :as repositories])
   (:use [clojure.set :only [difference intersection]]
         [clojure.java.browse]
@@ -55,7 +55,7 @@
   [& [env-id]]
   (cond
     (nil? env-id) (-> (repositories/get-repo-src-versions)
-                      (select-keys config/deployable-applications))
+                      (select-keys constants/deployable-applications))
     (string/starts-with? env-id "r/") (repositories/get-app-versions-from-manifest-properties env-id)
     :else (-> env-id
               (get-server-status-api-url)
@@ -139,11 +139,11 @@
 (defn open-app-version-diff [app-name version1 version2]
   (let [older-version (compare version1 version2)]
     (cond
-      (> older-version 0) (let [url (str "https://bitbucket.org/" config/bitbucket-root-user "/" app-name "/compare/"
+      (> older-version 0) (let [url (str "https://bitbucket.org/" constants/bitbucket-root-user "/" app-name "/compare/"
                                          app-name "-" version1 "%0D" app-name "-" version2 "#diff")]
         (println "Opening url " url)
         (browse-url url))
-      (< older-version 0) (let [url (str "https://bitbucket.org/" config/bitbucket-root-user "/" app-name "/compare/"
+      (< older-version 0) (let [url (str "https://bitbucket.org/" constants/bitbucket-root-user "/" app-name "/compare/"
                                          app-name "-" version2 "%0D" app-name "-" version1 "#diff")]
         (println "Opening url " url)
         (browse-url url)))))
@@ -156,13 +156,13 @@
 
 
 (defn get-app-diffs-between-tags [app-name version1 version2]
-  (let [tag-results-1 (client/get (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/" app-name "/refs/tags/" app-name "-" version1)
+  (let [tag-results-1 (client/get (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/" app-name "/refs/tags/" app-name "-" version1)
             {:content-type :json :basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] :throw-exceptions false :as :json})
         tag-hash-1 (get-in tag-results-1 [:body :target :hash])
-        tag-results-2 (client/get (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/" app-name "/refs/tags/" app-name "-" version2)
+        tag-results-2 (client/get (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/" app-name "/refs/tags/" app-name "-" version2)
             {:content-type :json :basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] :throw-exceptions false :as :json})
         tag-hash-2 (get-in tag-results-2 [:body :target :hash])
-        tag-diff-results (client/get (str "https://api.bitbucket.org/2.0/repositories/" config/bitbucket-root-user "/" app-name "/diff/" tag-hash-1 ".." tag-hash-2)
+        tag-diff-results (client/get (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/" app-name "/diff/" tag-hash-1 ".." tag-hash-2)
             { :basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] :throw-exceptions false })
         file-name (utils/get-report-file-name-path (str app-name "-diffs-between-" version1 "-" version2)) ]
 ;;     (spit file-name (:body tag-diff-results))
@@ -171,11 +171,11 @@
 
 (defn download-app-war [app-name version]
   (let [war-filename (str app-name "-" version ".war")
-        war-url (str config/nexus-url-base app-name "/" version "/" war-filename)
-        war-dir (str config/workspace-root "/warfiles")
+        war-url (str constants/nexus-url-base app-name "/" version "/" war-filename)
+        war-dir (str constants/workspace-root "/warfiles")
         app-war-dir (str war-dir "/" app-name)
         dest-path (str app-war-dir "/" war-filename)
-        alt-war-path (str config/user-root-path "/.m2/repository/" config/library-namespace "/" app-name "/" version "/" war-filename)]
+        alt-war-path (str constants/user-root-path "/.m2/repository/" constants/library-namespace "/" app-name "/" version "/" war-filename)]
     (io/make-parents dest-path)
     (if-not (.exists (io/file dest-path))
       (if (.exists (io/file alt-war-path))
@@ -215,7 +215,7 @@
       (let [app-name (first versions)
             version (second versions)
             war-filename (str app-name "-" version ".war")
-            war-dir (str config/workspace-root "/warfiles")
+            war-dir (str constants/workspace-root "/warfiles")
             app-war-dir (str war-dir "/" app-name)
             dest-path (str app-war-dir "/" war-filename)]
         (println "For app " app-name)
@@ -241,7 +241,7 @@
   ([app-name version]
     (update-docker-compose-app-version "mpn" app-name version))
   ([project app-name version]
-    (let [compose-yaml-file (str config/src-root-dir "/dev-env/projects/" project "/docker-compose.yml")
+    (let [compose-yaml-file (str constants/src-root-dir "/dev-env/projects/" project "/docker-compose.yml")
           compose-yaml (yaml/from-file compose-yaml-file)
           app-key (str (clojure.string/upper-case app-name) "-VERSION")
           existing-version (get-in compose-yaml ["services" "war-deployer" "environment" app-key])]
@@ -272,7 +272,7 @@
   [env-srvr]
   (let [project-name "mpn"
         env-app-versions (get-env-app-info env-srvr)
-        compose-yaml-file (str config/src-root-dir "/dev-env/projects/" project-name "/docker-compose.yml")
+        compose-yaml-file (str constants/src-root-dir "/dev-env/projects/" project-name "/docker-compose.yml")
         compose-yaml-backup-file (str compose-yaml-file "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)) ".txt")
         compose-yaml (yaml/from-file compose-yaml-file)
         app-keys (filter #(and (not (.startsWith % "HINTERLAND")) (.endsWith % "_VERSION")) (keys (get-in compose-yaml ["services" "war-deployer" "environment"])))
