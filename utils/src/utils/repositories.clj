@@ -281,6 +281,19 @@
        (into {})))
 
 
+(defn show-repo-versions
+  "Displays the git branches or tags for the specified (or all) local git repositories in the
+  source root directory, including any linked repos in checkouts subdirectories."
+  [& repo-names]
+  (->> (if (> (count repo-names) 0)
+         (intersection (set repo-names) (set (get-repos-in-src-root)))
+         (get-repos-in-src-root))
+       (map #(hash-map % {:version (dependencies/strip-name-from-version % (get-repo-version %))
+                          :linked-repos (get-linked-repo-versions %)}))
+       (into (sorted-map))
+       (pprint)))
+
+
 (defn check-for-running-repl?
   "Checks to see if there is a file named .nrepl-port in the root of the repo's path
   to see if there is a repl running currently for this repo"
@@ -536,6 +549,7 @@
       (println "Exception trying to get app versions from manifest.properties for branch" branch)
       (println (:message &throw-context))
       {})))
+
 
 (defn find-manifest-containing-app-version
   "

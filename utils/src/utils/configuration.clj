@@ -12,129 +12,182 @@
         [clojure.set :only [difference intersection]]
         [slingshot.slingshot :only [try+]]))
 
-(def config-path-root "/opt/cenx/application")
-(def configs-to-check {
-                        "conduit" {:file-name "config.edn"
-                                   :source-config-path "dev/resources/config.edn"
-                                   :keys [[ "nested" :url]]}
-                        "heimdallr" {:file-name "config.edn"
-                                    :source-config-path "resources/heimdallr/config.edn"
-                                    :keys [[:full :elm-url]
-                                            [:full :zk :urls]
-                                            [:build :zk :urls]]}
-                        "naranathu" {:file-name "config.edn"
-                                    :source-config-path "resources/config.edn"
-                                    :keys [[:containers :ingest :host]]}
-                        "stentor" {:file-name "config.edn"
-                                   :source-config-path ""
-                                   :keys [[:host]]}
-                        "epiphany" {:file-name "config.edn"
-                                    :source-config-path ""
-                                    :keys [[:security :ldap :host]
-                                           [:rethinkdb :host]
-                                           [:solr-url]
-                                           [:inventory-collection]
-                                           [:inventory-collection-url]
-                                           [:alarms-collection-url]
-                                           [:events-collection-url]
-                                           [:analytics-api-url]]}
-                        "huginn" {:file-name "config.clj"
-                                  :source-config-path ""
-                                  :keys [[:solr-url]
-                                         [:zk-url]]}
-                        "parker" {:file-name "config.edn"
-                                  :source-config-path "resources/config.edn"
-                                  :keys [[:kafka :local "metadata.broker.list"]
-                                         [:solr :local :url]
-                                         [:solr :local :zookeeper-url]
-                                         [:analytics-index :local :url]
-                                         [:analytics-index :local :zookeeper-url]
-                                         [:event-service-config :solr-url]
-                                         [:event-service-config :zookeeper-url]
-                                         [:event-service-config :solr-zookeeper-url]]}
-                        "stores/apollo/resources" {:file-name "config.edn"
-                                                   :source-config-path ""
-                                                   :keys [[:inventory-websocket-endpoint]
-                                                          [:inventory-base-url]
-                                                          [:audit-base-url]
-                                                          [:presentation-base-url]
-                                                          [:search-service-base-url]
-                                                          [:conduit-url]
-                                                          [:webxng-url]
-                                                          [:ops-tracker-url]
-                                                          [:analytics-base-url]
-                                                          [:adhoc-base-url]]}
-                        "apollo" {:file-name "config.edn"
-                                  :source-config-path "dev/resources/config.edn"
-                                  :keys [[:presentation-base-url]
-                                         [:search-service-base-url]
-                                         [:analytics-base-url]
-                                         [:data-driven-ui]
-                                         [:audit-base-url]
-                                         [:conduit-url]
-                                         [:client-logging-service-url]]}
-                        "icarus" {:file-name "config.edn"
-                                  :source-config-path "resources/config.edn"
-                                  :keys [[:db-spec :subname]
-                                         [:change-control-solr :url]
-                                         [:trouble-ticket-solr :url]
-                                         [:parker-solr :url]]}
-                        "athena" {:file-name "config.edn"
-                                  :source-config-path ""
-                                  :keys [[:full :db-uri]
-                                         [:full :solr-url]
-                                         [:full :solr-zk-url]
-                                         [:full :es-kafka-url]
-                                         [:full :es-zk-url]
-                                         [:build :db-uri]
-                                         [:build :solr-url]
-                                         [:build :solr-zk-url]
-                                         [:build :es-kafka-url]
-                                         [:build :es-zk-url]]}
-                        "granitedb" {:file-name "config.clj"
-                                  :source-config-path ""
-                                  :keys [[:host]]}
-                        "ripper" {:file-name "db_config.clj"
-                                  :source-config-path ""
-                                  :keys [[:host]]}
-                        "terminus" {:file-name "config.clj"
-                                   :source-config-path "resources/config.edn"
-                                   :keys [[:client-config :solr-url]
-                                           [:client-config :kafka-url]
-                                           [:client-config :zookeeper-url]
-                                           [:data-sources :hippalectryon :solr-url]
-                                           [:data-sources :hippalectryon :solr-zookeeper-url]]}
-                        "bifrost" {:file-name "config.clj"
-                                   :source-config-path ""
-                                   :keys [[:inventory-solr-url]
-                                          [:event-service-solr-url]
-                                          [:reconciliation-solr-url]
-                                          [:solr-zookeeper-url]
-                                          [:fault-url]
-                                          [:domain-controller]
-                                          [:kafka-url]
-                                          [:zookeeper-url]
-                                          [:bpm :engine-url]
-                                          [:file-upload-targets :remote-host]
-                                          [:metrics-graphite :host]]}
-                        "hecate" {:file-name "config.edn"
-                                  :source-config-path ""
-                                  :keys [[:realtime :zk-url-list]
-                                         [:default :zk-url-list]
-                                         [:solr-query :uri]
-                                         [:event-sink :uri]
-                                         [:alarm-sink :uri]
-                                         [:kafka-output :zk-url-list]]}
-                        "moirai" {:file-name "config.edn"
-                                  :source-config-path "resources/config.edn"
-                                  :keys [[:zookeeper :urls]]}})
+(def config-path-root "Root directory for central configuration files" "/opt/cenx/application")
+(def configs-to-check
+  "Map containing app/module/repo names as keys with a sub-map containing 3 entries:
+      :file-name - the config file name for the module in the central configuration location,
+                   usually config.edn or config.clj.
+      :source-config-path - the path to the config file relative to the root directory of the
+                            source repository.
+      :keys - a list of lists of keys for entries in the config files that have environment
+              dependent values, these will be used in 'clojure.core/get-in calls to get the values."
+  {
+    "conduit" {:file-name "config.edn"
+               :source-config-path "dev/resources/config.edn"
+               :keys [[ "nested" :url]]}
+    "heimdallr" {:file-name "config.edn"
+                 :source-config-path "resources/heimdallr/config.edn"
+                 :keys [[:full :elm-url]
+                        [:full :zk :urls]
+                        [:build :zk :urls]]}
+    "naranathu" {:file-name "config.edn"
+                 :source-config-path "resources/config.edn"
+                 :keys [[:containers :ingest :host]]}
+    "stentor" {:file-name "config.edn"
+               :source-config-path ""
+               :keys [[:host]]}
+    "epiphany" {:file-name "config.edn"
+                :source-config-path ""
+                :keys [[:security :ldap :host]
+                       [:rethinkdb :host]
+                       [:solr-url]
+                       [:inventory-collection]
+                       [:inventory-collection-url]
+                       [:alarms-collection-url]
+                       [:events-collection-url]
+                       [:analytics-api-url]]}
+    "huginn" {:file-name "config.clj"
+              :source-config-path ""
+              :keys [[:solr-url]
+                     [:zk-url]]}
+    "parker" {:file-name "config.edn"
+              :source-config-path "resources/config.edn"
+              :keys [[:kafka :local "metadata.broker.list"]
+                     [:solr :local :url]
+                     [:solr :local :zookeeper-url]
+                     [:analytics-index :local :url]
+                     [:analytics-index :local :zookeeper-url]
+                     [:event-service-config :solr-url]
+                     [:event-service-config :zookeeper-url]
+                     [:event-service-config :solr-zookeeper-url]]}
+    "stores/apollo/resources" {:file-name "config.edn"
+                               :source-config-path ""
+                               :keys [[:inventory-websocket-endpoint]
+                                      [:inventory-base-url]
+                                      [:audit-base-url]
+                                      [:presentation-base-url]
+                                      [:search-service-base-url]
+                                      [:conduit-url]
+                                      [:webxng-url]
+                                      [:ops-tracker-url]
+                                      [:analytics-base-url]
+                                      [:adhoc-base-url]]}
+    "apollo" {:file-name "config.edn"
+              :source-config-path "dev/resources/config.edn"
+              :keys [[:presentation-base-url]
+                     [:search-service-base-url]
+                     [:analytics-base-url]
+                     [:data-driven-ui]
+                     [:audit-base-url]
+                     [:conduit-url]
+                     [:client-logging-service-url]]}
+    "icarus" {:file-name "config.edn"
+              :source-config-path "resources/config.edn"
+              :keys [[:db-spec :subname]
+                     [:change-control-solr :url]
+                     [:trouble-ticket-solr :url]
+                     [:parker-solr :url]]}
+    "athena" {:file-name "config.edn"
+              :source-config-path ""
+              :keys [[:full :db-uri]
+                     [:full :solr-url]
+                     [:full :solr-zk-url]
+                     [:full :es-kafka-url]
+                     [:full :es-zk-url]
+                     [:build :db-uri]
+                     [:build :solr-url]
+                     [:build :solr-zk-url]
+                     [:build :es-kafka-url]
+                     [:build :es-zk-url]]}
+    "granitedb" {:file-name "config.clj"
+                 :source-config-path ""
+                 :keys [[:host]]}
+    "ripper" {:file-name "db_config.clj"
+              :source-config-path ""
+              :keys [[:host]]}
+    "terminus" {:file-name "config.clj"
+                :source-config-path "resources/config.edn"
+                :keys [[:client-config :solr-url]
+                       [:client-config :kafka-url]
+                       [:client-config :zookeeper-url]
+                       [:data-sources :hippalectryon :solr-url]
+                       [:data-sources :hippalectryon :solr-zookeeper-url]]}
+    "bifrost" {:file-name "config.clj"
+               :source-config-path ""
+               :keys [[:inventory-solr-url]
+                      [:event-service-solr-url]
+                      [:reconciliation-solr-url]
+                      [:solr-zookeeper-url]
+                      [:fault-url]
+                      [:domain-controller]
+                      [:kafka-url]
+                      [:zookeeper-url]
+                      [:bpm :engine-url]
+                      [:file-upload-targets :remote-host]
+                      [:metrics-graphite :host]]}
+    "hecate" {:file-name "config.edn"
+              :source-config-path ""
+              :keys [[:realtime :zk-url-list]
+                     [:default :zk-url-list]
+                     [:solr-query :uri]
+                     [:event-sink :uri]
+                     [:alarm-sink :uri]
+                     [:kafka-output :zk-url-list]]}
+    "moirai" {:file-name "config.edn"
+              :source-config-path "resources/config.edn"
+              :keys [[:zookeeper :urls]]}})
 
-(defn find-nested [m k]
+(defn find-nested
+  "Helper function to find nested values.
+
+  Arguments:
+  m - map
+  k - key to be searched for"
+  [m k]
   (->> (tree-seq map? vals m)
        (filter map?)
        (some k)))
 
-(defn check-config-file [app-name path details]
+
+(defn get-config-file-path
+  "
+  Arguments:
+    location - if this is \"source\" then config files in the local repositories are modified,
+               else the config files in the central config location are modified.
+               Defaults to the central config location.
+    app-name - name of the app/module/repo to find config files for.
+    details - Optional, the entry from 'utils.core/configs-to-check for the specified app."
+  ([location app-name]
+   (get-config-file-path location app-name (get configs-to-check app-name)))
+  ([location app-name details]
+   (if (= location "source")
+     (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
+     (str config-path-root "/" app-name "/" (:file-name details)))))
+
+
+(defn get-config-file-paths
+  "Returns a list containing all valid paths to config files for the desired app/module/repo.
+
+  NOT COMPLETED
+
+  Arguments:
+    app-name - name of the app/module/repo to find config files for.
+    details - Optional, the entry from 'utils.core/configs-to-check for the specified app."
+  ([app-name]
+   (get-config-file-paths app-name (get configs-to-check app-name)))
+  ([app-name details]
+   (-> [(str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
+        (str config-path-root "/" app-name "/" (:file-name details))]
+       (filter #()))))
+
+
+(defn check-config-file
+  "
+  Arguments:
+    app-name - name of the app/module/repo to find config files for.
+    path -
+    details - Optional, the entry from 'utils.core/configs-to-check for the specified app."
+  [app-name path details]
   (println "Checking app" app-name "config in" path)
   (if (.exists (io/file path))
     (try+
@@ -150,7 +203,14 @@
 
 
 (defn get-modules-to-check-config
-  [location cnfgs-names-to-check]
+  "
+  Arguments:
+    location - if this is \"source\" then config files in the local repositories are modified,
+               else the config files in the central config location are modified.
+               Defaults to the central config location.
+    cnfgs-names-to-check - Optional - list of 0 or more repository names to modify the configs for.
+                           Defaults to the keys of 'utils.core/configs-to-check."
+  [location & cnfgs-names-to-check]
   (let [cnfgs-submitted (set (if (seq? (first cnfgs-names-to-check))
                                (first cnfgs-names-to-check)
                                cnfgs-names-to-check))]
@@ -176,20 +236,15 @@
           apps-in-config-path-root
           (intersection cnfgs-submitted apps-in-config-path-root))))))
 
-(defn get-config-file-path
-  [location app-name details]
-  (if (= location "source")
-    (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
-    (str config-path-root "/" app-name "/" (:file-name details))))
-
 
 (defn check-config-settings
   "Displays the current settings for the apps/modules in the /opt/cenx/application directory or in the source repositories.
 
   Arguments:
-  location - optional - if this is \"source\" then config files in the local repositories are modified,
+  location - Optional - if this is \"source\" then config files in the local repositories are modified,
              else the config files in the central config location are modified. Defaults to the central config location.
-  cnfgs-names-to-check - optional list of 0 or more repository names to modify the configs for."
+  cnfgs-names-to-check - Optional - list of 0 or more repository names to modify the configs for.
+                         Defaults to the keys of 'utils.core/configs-to-check."
   ([]
    (check-config-settings "central" (keys configs-to-check)))
   ([location & cnfgs-names-to-check]
@@ -205,12 +260,13 @@
 
 (defn replace-config-setting
   "
-  arguments:
+  Arguments:
   location - if this is \"source\" then config files in the local repositories are modified,
              else the config files in the central config location are modified.
   old-value - string to be replaced
   new-value - replacement string
-  cnfgs-names-to-check - optional list of 0 or more repository names to modify the configs for."
+  cnfgs-names-to-check - Optional - list of 0 or more repository names to modify the configs for.
+                         Defaults to the keys of 'utils.core/configs-to-check."
   ([old-value new-value]
    (replace-config-setting "central" old-value new-value))
   ([location old-value new-value & cnfgs-names-to-check]
@@ -231,3 +287,20 @@
                    (if (not (nil? (nth (first diffs) x))) (println "Line" x ":" (nth (first diffs) x) "          became     " (nth (second diffs) x)))))
                (utils/log-action "replaced config setting '" old-value"' with '" new-value "' in file " file-path))
              (println "No changes in file " file-path))))))))
+
+(defn set-config-setting
+  "
+  Arguments:
+    repo-name - name of the app/module/repo to set the config value for.
+    keys-seq - list of keys to set the value in the config file.
+    new-value - replacement string"
+  [repo-name keys-seq new-value]
+  (let [details (get configs-to-check repo-name)
+        file-paths [(get-config-file-path "central" repo-name details)
+                    (get-config-file-path "source" repo-name details)]]
+    (map #(-> %
+              (load-file)
+              (assoc-in keys-seq)
+              (prn-str)
+              ((partial spit %))) file-paths)))
+

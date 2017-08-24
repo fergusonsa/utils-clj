@@ -7,7 +7,11 @@
 
 
 (defn get-tag
-  ""
+  "Returns the proper tag for a version of a repo, usually in the format of \"<repo-name>-<version>\"
+
+  Arguments:
+    repo-name - name of the app/module/repo.
+    version - the version of the repo."
   [repo-name version]
   (if (not (string? version))
     (println "!!!!!!!!!!!!!!!!!!!!!!!! version is not string! >" version "<"))
@@ -16,7 +20,7 @@
     (str repo-name "-" version)))
 
 
-(defn ignored?
+(defn- ignored?
   ""
   [classname]
   (let [ignored #{"callers" "dbg" "clojure.lang" "swank" "eval"}]
@@ -30,7 +34,14 @@
 
 
 (defn get-report-file-name-path
-  ""
+  "Returns a path for a report file with the format \"<:path>/<:subdirectory>/<prefix>-yyyyMMdd_HHmmss<:extenstion>\".
+
+  Arguments:
+    prefix - prefix for the report file name.
+    :create-parents - Optional. Whether to create any missing parent directories. Defaults to true.
+    :subdirectory - Optional. A string relative path of subdirectories. Defaults to nil.
+    :path - Optional. A string absolute path to the root directory to place reports. Defaults to 'utils.constants/report-path.
+    :extension - Optional. A string containing the file extension to use. Defaults to \".txt\"."
   [prefix & {:keys [create-parents path extension subdirectory]
              :or {create-parents true
                   path constants/reports-path
@@ -43,7 +54,7 @@
 
 
 (defn log-action
-  ""
+  "Write a log entry to the daily rotating log file with a timestamp, calling function name, and the string representation of the arguments passed in."
   [& args]
   (let [message (apply str args)
         calling-function (nth (callers) 3)
@@ -58,16 +69,27 @@
   (let [fn-name (key fn-mapentry)
         var (val fn-mapentry)
         meta-info (meta var)
-        pattern (if (nil? desired-fn-name) #".*" (re-pattern desired-fn-name))]
+        pattern (if (nil? desired-fn-name) #".*" (re-pattern desired-fn-name))
+        instance (.get var)]
     (if (or (nil? desired-fn-name) (re-find pattern (name fn-name)))
       (do
-        (print fn-name "")
-        (if (:arglists meta-info)
-          (pprint (:arglists meta-info))
-          (println))
+        (if (clojure.test/function? instance)
+          (do
+            (print "Function" fn-name "")
+            (if (:arglists meta-info)
+              (pprint (:arglists meta-info))
+              (println)))
+          (println (type instance) fn-name ""))
         (if (:doc meta-info)
           (println " " (string/trim (:doc meta-info))))
         (println)))))
+
+
+(defn help
+  "Helper method in case someone uses \"help\" instead of \"utils-help\""
+  [& args]
+  (println "Should be using \"(utils.core/utils-help)\" instead of \"(utils.core/help)\"")
+  (apply utils-help args))
 
 
 (defn utils-help

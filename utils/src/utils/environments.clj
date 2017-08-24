@@ -26,10 +26,11 @@
     (if (not (.endsWith env-srvr "/api/status")) "/api/status" "")))
 
 
-(defn get-env-app-info [env-srvr]
+(defn get-env-app-info
   "Gets the versions of applications deployed to the specified server by calling the
   api/status interface and parsing the results to return a sorted map with application
   names as keys and versions as values."
+  [env-srvr]
   (-> (get-server-status-api-url env-srvr)
       (client/get)
       (:body)
