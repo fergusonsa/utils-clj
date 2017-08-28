@@ -20,6 +20,26 @@
     (str repo-name "-" version)))
 
 
+(defn check-optional-arguments-for-array
+  "Guarantees to return a vector  "
+  [args]
+  (cond
+    (nil? args)
+    []
+
+    (and (sequential? (first args)) (= (count args) 1))
+    (first args)
+
+    (and (sequential? args) (= (count args) 1) (nil? (first args)))
+    []
+
+    (sequential? args)
+    args
+
+    :else
+    [args]))
+
+
 (defn- ignored?
   ""
   [classname]

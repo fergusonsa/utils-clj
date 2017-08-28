@@ -152,7 +152,7 @@
 (defn get-config-file-path
   "
   Arguments:
-    location - if this is \"source\" then config files in the local repositories are modified,
+    location - if this is :source then config files in the local repositories are modified,
                else the config files in the central config location are modified.
                Defaults to the central config location.
     app-name - name of the app/module/repo to find config files for.
@@ -160,7 +160,7 @@
   ([location app-name]
    (get-config-file-path location app-name (get configs-to-check app-name)))
   ([location app-name details]
-   (if (= location "source")
+   (if (= location :source)
      (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
      (str config-path-root "/" app-name "/" (:file-name details)))))
 
@@ -176,9 +176,9 @@
   ([app-name]
    (get-config-file-paths app-name (get configs-to-check app-name)))
   ([app-name details]
-   (-> [(str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
-        (str config-path-root "/" app-name "/" (:file-name details))]
-       (filter #()))))
+   (->> [(str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
+         (str config-path-root "/" app-name "/" (:file-name details))]
+        (filter #(.exists (io/file %))))))
 
 
 (defn check-config-file
@@ -205,16 +205,14 @@
 (defn get-modules-to-check-config
   "
   Arguments:
-    location - if this is \"source\" then config files in the local repositories are modified,
+    location - if this is :source then config files in the local repositories are modified,
                else the config files in the central config location are modified.
                Defaults to the central config location.
     cnfgs-names-to-check - Optional - list of 0 or more repository names to modify the configs for.
                            Defaults to the keys of 'utils.core/configs-to-check."
   [location & cnfgs-names-to-check]
-  (let [cnfgs-submitted (set (if (seq? (first cnfgs-names-to-check))
-                               (first cnfgs-names-to-check)
-                               cnfgs-names-to-check))]
-    (if (= location "source")
+  (let [cnfgs-submitted (set (utils/check-optional-arguments-for-array cnfgs-names-to-check))]
+    (if (= :source  location)
       ;; Checking the source root directory for apps/modules to check
       ;; Get the list of apps/git repos in the source root and have
       ;; entries in the map of configuration setting to check
@@ -222,71 +220,83 @@
                                               (set (filter #(not(empty? (get-in configs-to-check [% :source-config-path])))
                                                            (keys configs-to-check))))]
         (if (empty? cnfgs-submitted)
-          apps-in-source-root
-          (intersection apps-in-source-root (set cnfgs-submitted))))
-      ;; Checking the central config directory for apps/modules to check
-      ;; Get the list of apps with config directories in the central config directory and have
-      ;; entries in the map of configuration setting to check
-      (let [apps-in-config-path-root (intersection (set (keys configs-to-check))
-                                                   (set (map #(.getName %)
-                                                             (filter #(and (.isDirectory (clojure.java.io/file %))
-                                                                           (.contains (keys configs-to-check) (.getName %)))
-                                                                     (.listFiles (clojure.java.io/file config-path-root))))))]
-        (if (empty? cnfgs-submitted)
-          apps-in-config-path-root
-          (intersection cnfgs-submitted apps-in-config-path-root))))))
+            apps-in-source-root
+            (intersection apps-in-source-root (set cnfgs-submitted))))
+
+      (if (= :central location)
+        ;; Checking the central config directory for apps/modules to check
+        ;; Get the list of apps with config directories in the central config directory and have
+        ;; entries in the map of configuration setting to check
+        (let [apps-in-config-path-root (intersection (set (keys configs-to-check))
+                                                     (set (map #(.getName %)
+                                                               (filter #(and (.isDirectory (clojure.java.io/file %))
+                                                                             (.contains (keys configs-to-check) (.getName %)))
+                                                                       (.listFiles (clojure.java.io/file config-path-root))))))]
+          (if (empty? cnfgs-submitted)
+            apps-in-config-path-root
+            (intersection cnfgs-submitted apps-in-config-path-root)))))))
 
 
 (defn check-config-settings
   "Displays the current settings for the apps/modules in the /opt/cenx/application directory or in the source repositories.
 
   Arguments:
-  location - Optional - if this is \"source\" then config files in the local repositories are modified,
-             else the config files in the central config location are modified. Defaults to the central config location.
+  location - if this is :source then config files in the local repositories are modified,
+             else the config files in the central config location are modified.
   cnfgs-names-to-check - Optional - list of 0 or more repository names to modify the configs for.
                          Defaults to the keys of 'utils.core/configs-to-check."
   ([]
-   (check-config-settings "central" (keys configs-to-check)))
-  ([location & cnfgs-names-to-check]
-   (if (= location "source")
-     (println "\nConfig settings in source repositories - " (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n")
-     (println "\nConfig settings in" config-path-root "- " (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n"))
-
-   (doseq [[app-name details] (into (sorted-map) (select-keys configs-to-check (get-modules-to-check-config location cnfgs-names-to-check)))]
-     (let [file-path (get-config-file-path location app-name details)]
-        (check-config-file app-name file-path details)
-        (println)))))
+   (apply (partial check-config-settings :all) (keys configs-to-check)))
+  ([location-arg & cnfgs-names-to-check]
+   (let [locations (if (= location-arg :all) [:source :central] [location-arg])]
+     (doseq [location locations]
+       (if (= location :source)
+         (println "\nConfig settings in source repositories - "
+                  (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n\n")
+         (println "\nConfig settings in" config-path-root "- "
+                  (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n\n"))
+       (let [apps-details (->> (get-modules-to-check-config location cnfgs-names-to-check)
+                                       (select-keys configs-to-check)
+                                       (into (sorted-map)))]
+         (doseq [[app-name details] apps-details]
+           (let [file-path (get-config-file-path location app-name details)]
+              (check-config-file app-name file-path details)
+              (println))))))))
 
 
 (defn replace-config-setting
   "
   Arguments:
-  location - if this is \"source\" then config files in the local repositories are modified,
+  locations - if this is :source then config files in the local repositories are modified,
              else the config files in the central config location are modified.
   old-value - string to be replaced
   new-value - replacement string
   cnfgs-names-to-check - Optional - list of 0 or more repository names to modify the configs for.
                          Defaults to the keys of 'utils.core/configs-to-check."
   ([old-value new-value]
-   (replace-config-setting "central" old-value new-value))
-  ([location old-value new-value & cnfgs-names-to-check]
-   (doseq [[app-name details] (into (sorted-map) (select-keys configs-to-check (get-modules-to-check-config location cnfgs-names-to-check)))]
-     (let [file-path (get-config-file-path location app-name details)]
-       (if (.exists (io/file file-path))
-         (let [file-contents (slurp file-path)
-               new-contents (.replace file-contents old-value new-value)]
-           (if (not= file-contents new-contents)
-             (do
-               (println "Replacing config setting '" old-value"' with '" new-value "' in file " file-path)
-               (spit file-path new-contents)
-               (let [file-contents-list (clojure.string/split-lines file-contents)
-                     new-contents-list (clojure.string/split-lines new-contents)
-                     diffs (data/diff file-contents-list new-contents-list)]
-                 (println "Changed lines:")
-                 (for [x (range (count (first diffs)))]
-                   (if (not (nil? (nth (first diffs) x))) (println "Line" x ":" (nth (first diffs) x) "          became     " (nth (second diffs) x)))))
-               (utils/log-action "replaced config setting '" old-value"' with '" new-value "' in file " file-path))
-             (println "No changes in file " file-path))))))))
+   (replace-config-setting :central old-value new-value))
+  ([location-arg old-value new-value & cnfgs-names-to-check]
+   (let [locations (if (= location-arg :all) [:source :central] [location-arg])]
+     (doseq [location locations]
+       (doseq [[app-name details] (into (sorted-map) (select-keys configs-to-check (get-modules-to-check-config location cnfgs-names-to-check)))]
+         (let [file-path (get-config-file-path location app-name details)]
+           (if (.exists (io/file file-path))
+             (let [file-contents (slurp file-path)
+                   new-contents (.replace file-contents old-value new-value)]
+               (if (not= file-contents new-contents)
+                 (do
+                   (println "Replacing config setting '" old-value"' with '" new-value "' in file " file-path)
+                   (spit file-path new-contents)
+                   (let [file-contents-list (clojure.string/split-lines file-contents)
+                         new-contents-list (clojure.string/split-lines new-contents)
+                         diffs (data/diff file-contents-list new-contents-list)]
+                     (println "Changed lines:")
+                     (clojure.pprint/pprint diffs)
+                     (for [x (range (count (first diffs)))]
+                       (if (not (nil? (nth (first diffs) x))) (println "Line" x ":" (nth (first diffs) x) "          became     " (nth (second diffs) x)))))
+                   (utils/log-action "replaced config setting '" old-value"' with '" new-value "' in file " file-path))
+                 (println "No changes in file " file-path))))))))))
+
 
 (defn set-config-setting
   "
@@ -295,12 +305,11 @@
     keys-seq - list of keys to set the value in the config file.
     new-value - replacement string"
   [repo-name keys-seq new-value]
-  (let [details (get configs-to-check repo-name)
-        file-paths [(get-config-file-path "central" repo-name details)
-                    (get-config-file-path "source" repo-name details)]]
+  (let [file-paths (get-config-file-paths repo-name)]
+    (utils/log-action "setting config setting " keys-seq " with \"" new-value "\" for repo " repo-name " in file(s) " file-paths)
     (map #(-> %
               (load-file)
-              (assoc-in keys-seq)
-              (prn-str)
-              ((partial spit %))) file-paths)))
+              (assoc-in keys-seq new-value)
+              (clojure.pprint/pprint (clojure.java.io/writer %))
+         file-paths))))
 
