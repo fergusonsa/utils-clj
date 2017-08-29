@@ -99,10 +99,12 @@
             (if (:arglists meta-info)
               (pprint (:arglists meta-info))
               (println)))
-          (println (type instance) fn-name ""))
+          (if (= (type instance) clojure.lang.Atom)
+            (println (type @instance) "(atom)" fn-name "")
+            (println (type instance) fn-name "")))
         (if (:doc meta-info)
           (println " " (string/trim (:doc meta-info))))
-        (println)))))
+        (println "\n")))))
 
 
 (defn help
