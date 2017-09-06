@@ -1,5 +1,7 @@
 (ns utils.configuration
   (:require [clojure.java.io :as io]
+            [clojure.edn :as edn]
+            [clojure.stacktrace :refer [print-cause-trace]]
             [utils.environments :as environments]
             [utils.repositories :as repositories]
             [utils.constants :as constants]
@@ -7,10 +9,21 @@
             [clj-time.format :as time-format]
             [utils.fake :as creds]
             [utils.core :as utils]
-            [clojure.data :as data])
+            [clojure.data :as data]
+            [zookeeper :as zk]
+            [zookeeper.data :as zkdata])
   (:use [clojure.pprint]
         [clojure.set :only [difference intersection]]
-        [slingshot.slingshot :only [try+]]))
+        [slingshot.slingshot :only [try+]])
+  (:import (org.apache.zookeeper KeeperException$NoNodeException
+                                 ZooKeeper)))
+
+(defonce ^:private zk-url (atom nil))
+(defonce ^:private zktimeout (atom nil))
+(defonce ^:private client (atom nil))
+(defonce ^:private zk-client-state (atom {}))
+(defonce ^:private reconnect-count (atom 0))
+
 
 (def config-path-root "Root directory for central configuration files" "/opt/cenx/application")
 (def configs-to-check
@@ -149,20 +162,150 @@
        (some k)))
 
 
+(defn create-client
+  "Create a zookeeper client connected to zookeeper server, and return it.
+  This is where the connection is actually made to ZooKeeper.
+  Throws an exception if it fails to connect."
+  []
+  (zk/connect @zk-url :timeout-msec @zktimeout))
+
+
+(defn get-reconnect-count
+  "Get the number of times a reconnect to the zookeeper server has been attempted
+  since the client started or since the last client reset, whichever is most recent."
+  []
+  @reconnect-count)
+
+
+(defn- reconnect
+  "Reconnect to zookeeper and renew the watch of registered nodes.
+  This will close the old client and create a new client."
+  []
+  (locking client
+    (swap! reconnect-count inc)
+    (try
+      (zk/close @client)
+      (reset! client (create-client))
+      (catch Exception e
+        (print-cause-trace e)
+        (throw (Exception. (str "failed to reconnect zookeeper server " @zk-url) e))))))
+
+
+(defn get-client
+  "Get a zookeeper client"
+  []
+  (when (= @zk-client-state :stopped)
+    (throw (Exception. "Attempting to get zookeeper client while zk-client is down.")))
+  (locking client
+    (when-not (= (zk/state @client) :CONNECTED)
+      (reconnect))
+    @client))
+
+
+(defn set-node-data!
+  ([^String node data]
+   (locking client
+     (let [client (get-client)]
+       (when-let [version (:version (zk/exists client node :watch? true))]
+         (set-node-data! node data version)))))
+  ([^String node data version]
+   (locking client
+     (let [client (get-client)]
+       (zk/set-data client node (zkdata/to-bytes (pr-str data)) version)))))
+
+
+(defn get-node-data
+  "Returns the data associated with the given node if it exists."
+  ([^String node]
+   (locking client
+     (let [client (get-client)]
+       (if-let [raw-data (:data (zk/data client node :watch? true))]
+         (let [return-data (edn/read-string (zkdata/to-string raw-data))]
+           return-data))))))
+
+
+(defn set-zk-config
+  "Create a zookeeper client and store it and its config in atoms: url, timeout, and client."
+  [^String host timeout]
+  (do
+    (reset! zktimeout timeout)
+    (reset! zk-url host)
+    (reset! client (create-client))))
+
+
+(defn start-zkclient
+  "Start function for Leaven ZKClient component"
+  ([]
+   (if-not (or (nil? @zk-url)
+               (nil? @zktimeout))
+     (start-zkclient "127.0.0.1:2181" 60000)
+     (start-zkclient @zk-url @zktimeout)))
+  ([host timeout]
+   (if-not (= :started @zk-client-state)
+     (do
+       (set-zk-config host timeout)
+       (reset! zk-client-state :started)))))
+
+
+(defn stop-zkclient
+  "Stop function for Leaven ZKClient component"
+  [host]
+  (if (= :started @zk-client-state)
+    (do
+        (reset! zk-client-state :stopped)
+        (locking client
+          (zk/close @client)
+          (reset! reconnect-count 0)))))
+
+
+(defn get-zookeeper-config
+  ""
+  [app-name]
+  (get-node-data (str "/" constants/library-namespace "/config/" app-name)))
+
+
 (defn get-config-file-path
   "
   Arguments:
-    location - if this is :source then config files in the local repositories are modified,
-               else the config files in the central config location are modified.
+    location - Possible values: :source - get the config files in the local code repositories
+                                :central - get the config files in the central config location
+                                :orca - get the config files in the orca configuration directories
+                                :zookeeper - Get the configuration
                Defaults to the central config location.
     app-name - name of the app/module/repo to find config files for.
     details - Optional, the entry from 'utils.core/configs-to-check for the specified app."
   ([location app-name]
    (get-config-file-path location app-name (get configs-to-check app-name)))
   ([location app-name details]
-   (if (= location :source)
+   (cond
+     (= location :source)
      (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
-     (str config-path-root "/" app-name "/" (:file-name details)))))
+
+     (= location :central)
+     (str config-path-root "/" app-name "/" (:file-name details))
+
+     (= location :orca)
+     (str (str constants/workspace-root "/src/orca-env/current-env/target/tools01/application/" app-name "/" (:file-name details))
+
+     (= location :zookeeper)
+     nil))))
+
+
+(defn get-config
+  ""
+  ([location app-name]
+   (get-config location app-name (get configs-to-check app-name)))
+  ([location app-name details]
+   (cond
+     (contains? #{:source :central :orca} location)
+     (-> (get-config-file-path location app-name details)
+         (load-file))
+
+     (= location :zookeeper)
+     (get-zookeeper-config app-name)
+
+     :else
+     nil)))
 
 
 (defn get-config-file-paths
@@ -176,8 +319,8 @@
   ([app-name]
    (get-config-file-paths app-name (get configs-to-check app-name)))
   ([app-name details]
-   (->> [(str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
-         (str config-path-root "/" app-name "/" (:file-name details))]
+   (->> [:source :central :orca]
+        (map get-config-file-path)
         (filter #(.exists (io/file %))))))
 
 
@@ -188,7 +331,7 @@
     path -
     details - Optional, the entry from 'utils.core/configs-to-check for the specified app."
   [app-name path details]
-  (println "Checking app" app-name "config in" path)
+  (println "Checking app" app-name "config in" path "\n")
   (if (.exists (io/file path))
     (try+
       (let [cfgs (load-file path)]
@@ -252,7 +395,7 @@
      (doseq [location locations]
        (if (= location :source)
          (println "\nConfig settings in source repositories - "
-                  (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n\n")
+                  (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n")
          (println "\nConfig settings in" config-path-root "- "
                   (time-format/unparse (time-format/formatters :date-hour-minute-second) (time-core/now)) "\n\n"))
        (let [apps-details (->> (get-modules-to-check-config location cnfgs-names-to-check)
@@ -312,4 +455,15 @@
               (assoc-in keys-seq new-value)
               (clojure.pprint/pprint (clojure.java.io/writer %))
          file-paths))))
+
+
+(defn set-zookeeper-config-from-file
+  ""
+  [from-location app-name & {:keys [custom-path]}]
+  (->> (if (= from-location ":custom")
+         (load-file custom-path)
+         (get-config from-location app-name))
+       (set-node-data! (str "/" constants/library-namespace "/config/" app-name)))
+  (utils/log-action "setting zookeeper config setting " (str "/" constants/library-namespace "/config/" app-name)
+                    " with contents of file " from-location " " custom-path))
 

@@ -100,9 +100,9 @@
                                 :as :json}))]
      (into (sorted-map)
            (concat (map #(hash-map (:name %) (get-in % [:target :date])) (:values results))
-                   (if (get results :next)
-                      (get-repo-refs repo-name ref-type :url (get results :next))
-                      {})))))
+                   (if-let [next-url (get results :next)]
+                     (get-repo-refs repo-name ref-type :url-arg next-url)
+                     {})))))
 
 
 (defn get-release-docker-images []
@@ -475,18 +475,38 @@
          (set-repo-versions))))
 
 
-(defn get-library-repos-for-module
+(defn show-library-versions-for-module
+  ""
+  ([repo-name]
+    (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
+      (println repo-name (get-version-from-repo repo))
+      (show-library-versions-for-module repo-name (get-version-from-repo repo))))
+  ([repo-name version]
+   (let [deps (into (sorted-map) (:dependencies (dependencies/find-module-dependencies repo-name version)))
+         modules-to-check (select-keys deps (filter is-controlled-module? (keys deps)))]
+     (println (count deps))
+     (if (> (count deps) 0)
+       (do
+         (println "Non-third party library requirements for" repo-name "\n")
+         (doseq [[module-name module-info] deps]
+           (println (format "%-60s %s" module-name (:version module-info)))))
+       (println "No Non-third party library requirements for" repo-name "\n")))))
+
+
+
+
+(defn checkout-library-repos-for-module
 "Currently limited to direct dependency libraries, NOT nested libraries"
   ([repo-name]
     (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
-      (get-library-repos-for-module repo-name (clj-jgit.porcelain/git-branch-current repo))))
+      (checkout-library-repos-for-module repo-name (get-version-from-repo repo))))
   ([repo-name version]
     (let [deps (dependencies/find-module-dependencies repo-name version)
           coll-deps (dependencies/coallate-dependencies-versions deps)
           modules-to-check (select-keys coll-deps (filter is-controlled-module? (keys coll-deps)))
           modules-versions (into {} (map (fn [m] {(key m) (last (val m))}) modules-to-check))]
       (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
-        (map #(get-library-repos-for-module repo-name version (key %) (val %)) modules-versions))))
+        (map #(checkout-library-repos-for-module repo-name version (key %) (val %)) modules-versions))))
   ([repo-name version library-name library-version]
     (let [dest-dir (str constants/src-root-dir "/" library-name)
           source-url (str "git@bitbucket.org:" constants/bitbucket-root-user"/" library-name ".git")
@@ -494,10 +514,10 @@
           checkouts-dir (str repo-dir "/checkouts")]
       (if (.isDirectory (clojure.java.io/file dest-dir))
         (do ;; A local git repo for library module already exists. Just checkout the desired version.
-          (println "Library repo" library-name "already exists in" dest-dir)
+          (println "\nLibrary repo" library-name "already exists in" dest-dir)
           (set-repo-version library-name library-version))
         (do ;; There is not an existing git repo for this library. Clone it and checkout the desired version.
-          (println "Library repo" library-name "does not exists in" dest-dir "and will be cloned from bitbucket")
+          (println "\nLibrary repo" library-name "does not exist in" dest-dir "and will be cloned from bitbucket")
           (io/make-parents dest-dir)
           (clj-jgit.porcelain/with-identity {:private (slurp constants/ssh-private-key-path)
                                              :public (slurp constants/ssh-public-key-path)

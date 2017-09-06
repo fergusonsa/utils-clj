@@ -13,7 +13,8 @@
                  [io.forward/yaml "1.0.6"]
                  [clojurewerkz/propertied "1.3.0"]
                  [version-clj "0.1.2"]
-                 [k2nr/docker "0.0.2"]]
+                 [k2nr/docker "0.0.2"]
+                 [zookeeper-clj "0.9.4"]]
   :main ^:skip-aot utils.main
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

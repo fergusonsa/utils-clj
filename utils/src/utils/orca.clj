@@ -4,12 +4,17 @@
           [k2nr.docker.image :as docker.image]))
 
 
-(defn get-docker-client []
-  (docker.core/make-client "127.0.0.1"))
+(defn get-docker-client
+  ([]
+    (get-docker-client "127.0.0.1:4243"))
+  ([host]
+   (docker.core/make-client host)))
 
 
 (defn search-image
   ""
-  [client term]
-  (docker.image/search client term))
+  ([term]
+   (search-image (get-docker-client) term))
+  ([client term]
+   (docker.image/search client term)))
 
