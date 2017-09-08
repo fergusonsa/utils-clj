@@ -75,6 +75,8 @@
   (cond
     (nil? env-id) "Local git repositories"
     (string/starts-with? env-id "r/") (str "Release " env-id)
+    (string/includes? env-id "localhost") "Local Dev Env"
+    (string/includes? env-id "127.0.0.1") "Local Dev Env"
     :else (first (string/split env-id #"\." 2))))
 
 

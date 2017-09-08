@@ -25,7 +25,7 @@
 (defonce ^:private reconnect-count (atom 0))
 
 
-(def config-path-root "Root directory for central configuration files" "/opt/cenx/application")
+(def config-path-root "Root directory for central configuration files" constants/central-config-root-dir)
 (def configs-to-check
   "Map containing app/module/repo names as keys with a sub-map containing 3 entries:
       :file-name - the config file name for the module in the central configuration location,
@@ -233,6 +233,39 @@
     (reset! client (create-client))))
 
 
+(defn get-children
+  "Returns the children of the given node or nil if none exist."
+  ([^String node]
+   (locking client
+     (let [client (get-client)]
+       (zk/children client node :watch? true)))))
+
+
+(defn get-all-zookeeper-config
+  "Retrieves all nested nodes in the zookeeper instance @zk-url, starting at the root config node, if a specific node is not specified."
+  ([]
+   (get-all-zookeeper-config (str "/" constants/library-namespace "/config/")))
+  ([node]
+   (->> node
+        (get-children)
+        (map #(->> (str node "/" %)
+                   (get-all-zookeeper-config)))
+        (into {})
+        (merge {node (get-node-data node)}))))
+
+
+(defn save-zookeeper-config-to-file
+  "Saves the zookeeper config to a report file."
+  []
+  (let [file-path (utils/get-report-file-name-path (str "zookeeper-config-" (environments/get-env-name @zk-url)))]
+    (with-open [fl (clojure.java.io/writer file-path)]
+      (.write fl (str "; Zookeeper central configurations on server " @zk-url " \n"))
+      (-> (get-all-zookeeper-config)
+          ((partial into (sorted-map)))
+          (clojure.pprint/pprint fl))
+    (println "Wrote zookkeeper config data for" @zk-url "to file" file-path)))
+
+
 (defn start-zkclient
   "Start function for Leaven ZKClient component"
   ([]
@@ -240,11 +273,16 @@
                (nil? @zktimeout))
      (start-zkclient "127.0.0.1:2181" 60000)
      (start-zkclient @zk-url @zktimeout)))
+  ([host]
+   (if (nil? @zktimeout)
+     (start-zkclient host 60000)
+     (start-zkclient host @zktimeout)))
   ([host timeout]
    (if-not (= :started @zk-client-state)
      (do
        (set-zk-config host timeout)
-       (reset! zk-client-state :started)))))
+       (reset! zk-client-state :started))
+     :already-started)))
 
 
 (defn stop-zkclient
@@ -260,8 +298,9 @@
 
 (defn get-zookeeper-config
   ""
-  [app-name]
-  (get-node-data (str "/" constants/library-namespace "/config/" app-name)))
+  [app-name & subnodes]
+  (-> (str "/" constants/library-namespace "/config/" app-name (clojure.string/join subnodes))
+    (get-node-data)))
 
 
 (defn get-config-file-path
@@ -292,7 +331,16 @@
 
 
 (defn get-config
-  ""
+  "
+  Arguments:
+    location - Possible values: :source - get the config files in the local code repositories
+                                :central - get the config files in the central config location
+                                :orca - get the config files in the orca configuration directories
+                                :zookeeper - Get the configuration
+               Defaults to the central config location.
+    app-name - name of the app/module/repo to find config files for.
+    details - Optional, the entry from 'utils.core/configs-to-check for the specified app."
+
   ([location app-name]
    (get-config location app-name (get configs-to-check app-name)))
   ([location app-name details]
@@ -310,8 +358,6 @@
 
 (defn get-config-file-paths
   "Returns a list containing all valid paths to config files for the desired app/module/repo.
-
-  NOT COMPLETED
 
   Arguments:
     app-name - name of the app/module/repo to find config files for.
@@ -381,7 +427,8 @@
 
 
 (defn check-config-settings
-  "Displays the current settings for the apps/modules in the /opt/cenx/application directory or in the source repositories.
+  "Displays the current settings for the apps/modules in the
+  (utils.constants/central-config-root-dir) directory or in the source repositories.
 
   Arguments:
   location - if this is :source then config files in the local repositories are modified,
@@ -458,7 +505,16 @@
 
 
 (defn set-zookeeper-config-from-file
-  ""
+  "
+  Arguments:
+    from-location - Possible values: :source - Get the config files in the local code repositories
+                                     :central - Get the config files in the central config location
+                                     :orca - Get the config files in the orca configuration directories
+                                     :zookeeper - Get the configuration from zookeeper, but would not have any changes.
+                                     :custom - Get the config file from the path specified in the :custom-path argument.
+                    Defaults to the central config location.
+    app-name - name of the app/module/repo to find config files for.
+    :custom-path - Optional - path to the custom config edn text file to load into zookeeper."
   [from-location app-name & {:keys [custom-path]}]
   (->> (if (= from-location ":custom")
          (load-file custom-path)

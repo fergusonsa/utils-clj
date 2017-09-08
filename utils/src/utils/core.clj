@@ -68,7 +68,9 @@
                   extension ".txt"
                   subdirectory nil}}]
    (let [dir-path (str (if (.endsWith path "/") path (str path "/")) (if (nil? subdirectory) "" (str subdirectory "/")))
-         file-path (str dir-path prefix "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)) extension)]
+         file-path (-> (str prefix "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)) extension)
+                       (clojure.string/replace #"\s" "-")
+                       ((partial str dir-path)))]
      (if create-parents (clojure.java.io/make-parents file-path))
      file-path))
 

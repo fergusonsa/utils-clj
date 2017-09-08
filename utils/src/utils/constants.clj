@@ -8,6 +8,7 @@
     nexus-url-base - The root url for checking for released versions of libraries and applications in a nexus repository
     reports-path - The root directory where reports are to be stored. Defaults to ~/reports
     src-root-dir - The root directory where local git repositories are located for each clojure module/application/library.
+    central-config-root-dir - The root directory where the central config files for all applications are located.
     ssh-private-key-path - The path to the private rsa key file. Defaults to ~/.ssh/id_rsa
     ssh-public-key-path - The path to the public rsa key file. Defaults to ~/.ssh/id_rsa.pub
     user-root-path - The path to the user's root directory. Defaults to ~/
@@ -36,6 +37,8 @@
                                  :doc "The path to the root directory for the workspace."}
                "src-root-dir" {:value (str (System/getProperty "user.home") "/ROOT/src")
                                :doc "The root directory where local git repositories are located for each clojure module/application/library."}
+               "central-config-root-dir" {:value "/opt/config/application"
+                                          :doc "The root directory where the central config files for all applications are located."}
                "reports-path" {:value (str (System/getProperty "user.home") "/reports")
                                :doc "The root directory where reports are to be stored. Defaults to ~/reports"}
                "nexus-url-base" {:value "http://nexus.root.localnet:8081/nexus/content/groups/public/root/"
@@ -54,8 +57,8 @@
   Currently on returns string and long (integer) settings."
   []
   (->> (ns-publics 'utils.constants)
-    (filter (fn [[k v]] (not (contains? #{'load-constants 'write-constants 'show-constants 'defaults 'loaded 'constants-file-path} k))))
-    (filter (fn [[k v]] (contains? #{java.lang.String java.lang.Long} (type (var-get v)))))
+    (filter (fn [[k v]] (not (clojure.test/function? (.get v)))))
+    (filter (fn [[k v]] (not (contains? #{'defaults 'constants-file-path} k))))
     (map (fn [[k v]] (hash-map (name k)
                                (hash-map :value (var-get v)
                                          :doc (get (meta v) :doc "")))))
@@ -89,13 +92,15 @@
 (defn load-constants
   "Loads the constants/configuration settings in the file path in 'utils.constants/constants-file-path
   If the file does not exist, it loads the default setting in 'utils.constants/defaults."
-  []
-  (let [settings-map (if (.exists (io/file constants-file-path))
+  [& args]
+  (let [verbose (some #(= :verbose %) args)
+        settings-map (if (.exists (io/file constants-file-path))
                        (clojure.edn/read-string (slurp constants-file-path))
                        (defaults))]
-;;     (println "Loading utils.constants settings from" (if (.exists (io/file constants-file-path)) constants-file-path "the defaults"))
+    (if verbose
+     (println "Loading utils.constants settings from" (if (.exists (io/file constants-file-path)) constants-file-path "the defaults")))
     (doseq [[name-key value] settings-map]
-;;       (println (type (:value value)) (:value value))
+       (if verbose (println name-key (type (:value value)) (:value value)))
        (eval `(def ~(symbol name-key) ~(get value :doc "") ~(:value value))))))
 
 
