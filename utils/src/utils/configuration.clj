@@ -324,7 +324,7 @@
       :or {root-node (str "/" constants/library-namespace "/config")
            path (str constants/workspace-root "/zk-configs/" @zk-url "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))}}]
   (let [configs (get-all-zookeeper-config root-node)]
-    (map #(save-zookeeper-config-to-individual-file (first %) (second %) path) configs)))
+    (map #(if-not (nil? (second %)) (save-zookeeper-config-to-individual-file (first %) (second %) path)) configs)))
 
 
 (defn start-zkclient
