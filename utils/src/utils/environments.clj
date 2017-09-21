@@ -1,4 +1,5 @@
 (ns utils.environments
+  (:refer-clojure :exclude [help])
   (:require [clj-http.client :as client]
             [cheshire.core :as json]
             [clojure.string :as string]
@@ -14,6 +15,10 @@
         [slingshot.slingshot :only [try+]])
   (:import [java.io StringReader]
            [java.util Properties]))
+
+(defn help
+  []
+  (utils/utils-help 'utils.environments))
 
 
 (defn get-server-status-api-url

@@ -10,9 +10,15 @@
   The reason for loading the identity information is to keep possibly sensitive information
   out of the source code and to easily make it useable by other users without having to change code.
   "
+  (:refer-clojure :exclude [help])
   (:require [utils.constants :as constants]
             [clojure.java.io :as io])
   (:import [java.nio.file Files CopyOption]))
+
+
+(defn help
+  []
+  ((resolve 'utils.core/utils-help) 'utils.constants))
 
 
 (defn write-identity [username password]

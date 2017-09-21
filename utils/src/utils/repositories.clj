@@ -3,6 +3,7 @@
 
   Uses third party libraries clj-jgit, clj-http, clj-time, slingshot.slingshot, clojure.tools.nrepl
   "
+  (:refer-clojure :exclude [help])
   (:require [clojure.java.io :as io]
             [utils.dependencies :as dependencies]
             [utils.core :as utils]
@@ -27,6 +28,9 @@
            [java.nio.file.attribute FileAttribute]
            [java.util Properties]))
 
+(defn help
+  []
+  (utils/utils-help 'utils.repositories))
 
 (defn is-controlled-module?
   "Checks to see if the module is a controlled module using the following rules:
@@ -81,7 +85,14 @@
 (defn get-repo-refs
   "Returns a sequence of maps containing
         {:name \"<branch-name>\" :target {:date \"YYYY-mm-ddTHH:MM:SS+00:00\"}}
-   for all branches that start with \"r/\" in the manifest repo."
+   for all branches that start with \"r/\" in the manifest repo.
+
+  Arguments:
+    repo-name - The name of the repo/application.
+    ref-type -
+    :url-arg <value> - Optional -
+    :qualifiers <value> - Optional -
+  "
   [repo-name ref-type & {:keys [url-arg qualifiers]
       :or {qualifiers ""}}]
     (let [url (if (nil? url-arg)
@@ -115,6 +126,9 @@
 
 (defn get-repo-branches
   "
+  Arguments:
+    repo-name - The name of the repo/application.
+    :url <value> - Optional -
   "
   [repo-name & {:keys [url]
       :or {url (str "https://api.bitbucket.org/2.0/repositories/"
@@ -216,7 +230,11 @@
 
 
 (defn get-repo-version
-  "Returns the git branch or tag for the specified local git repository."
+  "Returns the git branch or tag for the specified local git repository.
+
+  Arguments:
+    repo-name - The name of the repo/application.
+  "
   [repo-name]
   (if (.isDirectory (io/file (str constants/src-root-dir "/" repo-name "/.git")))
     (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
@@ -224,7 +242,11 @@
 
 
 (defn get-repo-version-map
-  "Returns a map with the git branch or tag for the specified local git repository."
+  "Returns a map with the git branch or tag for the specified local git repository.
+
+  Arguments:
+    repo-name - The name of the repo/application.
+  "
   [repo-name]
   { repo-name (get-repo-version repo-name)})
 
@@ -250,7 +272,12 @@
 
 
 (defn add-checkouts-link
-  "Creates a symlink in the repo's checkouts directory to the library's local git repo."
+  "Creates a symlink in the repo's checkouts directory to the library's local git repo.
+
+  Arguments:
+    repo-name - The name of the repo/application.
+    library-name -
+  "
   [repo-name library-name]
   (-> (str constants/src-root-dir "/" repo-name "/checkouts/" library-name)
        (create-symlink (str constants/src-root-dir "/" library-name))))
@@ -258,7 +285,12 @@
 
 (defn remove-checkouts-link
   "Deletes the specified library symlinks in the repo's checkouts directory.
-  If no library names are passed, then it will delete them all."
+  If no library names are passed, then it will delete them all.
+
+  Arguments:
+    repo-name - The name of the repo/application.
+    library-names - Optional -
+  "
   [repo-name & library-names]
   (->> (if (and (not (nil? library-names))
                (> (count library-names) 0))
@@ -273,7 +305,11 @@
 
 (defn get-linked-repo-versions
   "Returns a map contianing the names of modules linked to in the checkouts directory
-  as keys and their corresponding versions as values."
+  as keys and their corresponding versions as values.
+
+  Arguments:
+    repo-name - The name of the repo/application.
+  "
   [repo-name]
   (->> (str constants/src-root-dir "/" repo-name)
        (check-for-checkouts-directory)
@@ -371,6 +407,11 @@
   6. If changes were present in starting status, perform git stash pop to apply changes to new version of source.
   7. Reset any files that the stash apply staged.
   7. Get new current status and print appropriate messages.
+
+  Arguments:
+    repo - Optional -
+    repo-name - The name of the repo/application.
+    version - Version of the repo/application to find releases for.
   "
   ([repo-name version]
    (if (.isDirectory (io/file (str constants/src-root-dir "/" repo-name)))
@@ -445,7 +486,7 @@
 
 
 (defn- get-env-versions [env-id]
-  ((resolve 'utils.environment/get-env-versions) env-id))
+  ((resolve 'utils.environments/get-env-versions) env-id))
 
 
 (defn set-local-repo-versions-same-as
@@ -462,7 +503,11 @@
       (set-repo-versions)))
 
 
-(defn set-linked-repo-versions [repo-name]
+(defn set-linked-repo-versions
+  "
+  Arguments:
+    repo-name - The name of the repo/application."
+  [repo-name]
   (let [lib-versions (get-linked-repo-versions repo-name)
         deps (dependencies/find-module-dependencies repo-name (get-repo-version repo-name) :depth 1)]
     (->> (select-keys (:dependencies deps) (filter is-controlled-module? (keys (:dependencies deps))))
@@ -476,7 +521,9 @@
 
 
 (defn show-library-versions-for-module
-  ""
+  "
+  Arguments:
+    repo-name - The name of the repo/application."
   ([repo-name]
     (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
       (println repo-name (get-version-from-repo repo))
@@ -496,7 +543,10 @@
 
 
 (defn checkout-library-repos-for-module
-"Currently limited to direct dependency libraries, NOT nested libraries"
+  "Currently limited to direct dependency libraries, NOT nested libraries
+
+  Arguments:
+    repo-name - The name of the repo/application."
   ([repo-name]
     (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
       (checkout-library-repos-for-module repo-name (get-version-from-repo repo))))
@@ -578,7 +628,12 @@
   version - Version of the repo/application to find releases for.
 
   Returns a sorted map containing the release branch names as keys and the version of
-  the specified repo/application name's version in that release as value."
+  the specified repo/application name's version in that release as value.
+
+  Arguments:
+    repo-name - The name of the repo/application.
+    version - Version of the repo/application to find releases for.
+  "
   [repo-name version]
   ; Get the time the tag for that version was created.
    (let [formatter (time-format/formatter "yyyy-MM-dd'T'HH:mm:ss+00:00")
@@ -602,11 +657,11 @@
                                                          {v k}
                                                          {})))
                                       (into (sorted-map)))]
-     (println "******")
-     (println tag-date)
-     (println "******")
-     (pprint releases-after-tag-date)
-     (println "******")
+;;      (println "******")
+;;      (println tag-date)
+;;      (println "******")
+;;      (pprint releases-after-tag-date)
+;;      (println "******")
      (into (sorted-map)
            (map (fn [[rel-date release-name]]
             (let [rel-version (get (get-app-versions-from-manifest-properties release-name) repo-name "not-included")]

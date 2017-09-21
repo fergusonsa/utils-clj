@@ -1,4 +1,5 @@
 (ns utils.configuration
+  (:refer-clojure :exclude [help])
   (:require [clojure.java.io :as io]
             [clojure.edn :as edn]
             [clojure.stacktrace :refer [print-cause-trace]]
@@ -17,6 +18,10 @@
         [slingshot.slingshot :only [try+]])
   (:import (org.apache.zookeeper KeeperException$NoNodeException
                                  ZooKeeper)))
+
+(defn help
+  []
+  (utils/utils-help 'utils.configuration))
 
 (defonce ^:private zk-url (atom nil))
 (defonce ^:private zktimeout (atom nil))
@@ -150,6 +155,12 @@
               :source-config-path "resources/config.edn"
               :keys [[:zookeeper :urls]]}})
 
+
+(defn which-zookeeper
+  "Show which zookeeper currently connected to"
+  []
+  (println "Current status" @zk-client-state "for zookeeper instance" @zk-url))
+
 (defn find-nested
   "Helper function to find nested values.
 
@@ -242,9 +253,12 @@
 
 
 (defn get-all-zookeeper-config
-  "Retrieves all nested nodes in the zookeeper instance @zk-url, starting at the root config node, if a specific node is not specified."
+  "Retrieves all nested nodes in the zookeeper instance @zk-url, starting at the root config node, if a specific node is not specified.
+
+    Arguments:
+    node - Optional - The root zookeeper node to include all sub nodes. Defaults to the root config node."
   ([]
-   (get-all-zookeeper-config (str "/" constants/library-namespace "/config/")))
+   (get-all-zookeeper-config (str "/" constants/library-namespace "/config")))
   ([node]
    (->> node
         (get-children)
@@ -255,15 +269,62 @@
 
 
 (defn save-zookeeper-config-to-file
-  "Saves the zookeeper config to a report file."
-  []
-  (let [file-path (utils/get-report-file-name-path (str "zookeeper-config-" (environments/get-env-name @zk-url)))]
-    (with-open [fl (clojure.java.io/writer file-path)]
-      (.write fl (str "; Zookeeper central configurations on server " @zk-url " \n"))
-      (-> (get-all-zookeeper-config)
-          ((partial into (sorted-map)))
-          (clojure.pprint/pprint fl))
-    (println "Wrote zookkeeper config data for" @zk-url "to file" file-path)))
+  "Saves the zookeeper config to a report file.
+
+  Arguments:
+    :root-node - Optional - The root zookeeper node to include all sub nodes. Defaults to the root config node.
+    :path - Optional - The path to the directory where the files will be placed. Defaults to the default report directory, 'utils.constants/reports-path."
+  [& {:keys [root-node path]
+      :or {root-node (str "/" constants/library-namespace "/config")
+           path constants/reports-path}}]
+  (let [file-path (utils/get-report-file-name-path (str "zookeeper-"
+                                                        (environments/get-env-name @zk-url)
+                                                        (clojure.string/replace root-node #"/" "-"))
+                                                   :extension ".clj" :path path)]
+    (binding [*print-right-margin* 140
+              *print-miser-width* 120]
+      (with-open [fl (clojure.java.io/writer file-path)]
+        (.write fl (str "; Zookeeper central configurations on server " @zk-url " \n"))
+        (-> (get-all-zookeeper-config root-node)
+            ((partial into (sorted-map)))
+            (clojure.pprint/pprint fl)))
+      (println "Wrote zookkeeper config data for" @zk-url "to file" file-path))
+
+    (utils/log-action "saving zookeeper configs starting at node '" root-node "' to 1 file '" file-path "'.")))
+
+
+(defn- save-zookeeper-config-to-individual-file
+  "Saves the zookeeper config to a report file.
+
+  Arguments:
+    :root-node - Optional - The root zookeeper node to include all sub nodes. Defaults to the root config node.
+    :path - Optional - The path to the directory where the files will be placed. Defaults to the default report directory, 'utils.constants/reports-path."
+  [node-path config-map path]
+  (let [file-path (str path (subs node-path 12) "/config.clj")]
+    (clojure.java.io/make-parents file-path)
+    (binding [*print-right-margin* 140
+              *print-miser-width* 120]
+      (with-open [fl (clojure.java.io/writer file-path)]
+        (.write fl (str "; Zookeeper central configurations on server " @zk-url
+                        " - " (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date))" \n"))
+        (-> config-map
+            ((partial into (sorted-map)))
+            (clojure.pprint/pprint fl))))
+    (println "Wrote zookkeeper config data for node" node-path "on server" @zk-url "to file" file-path)
+    (utils/log-action "saving zookeeper configs starting at node '" node-path "' to 1 file '" file-path "'.")))
+
+
+(defn save-zookeeper-configs-to-files
+  "Saves each zookeeper config node to its own report file.
+
+  Arguments:
+    :root-node - Optional - The root zookeeper node to include all sub nodes. Defaults to the root config node.
+    :path - Optional - The path to the directory where the files will be placed. Defaults to the default report directory, 'utils.constants/reports-path."
+  [& {:keys [root-node path]
+      :or {root-node (str "/" constants/library-namespace "/config")
+           path (str constants/workspace-root "/zk-configs/" @zk-url "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))}}]
+  (let [configs (get-all-zookeeper-config root-node)]
+    (map #(save-zookeeper-config-to-individual-file (first %) (second %) path) configs)))
 
 
 (defn start-zkclient
@@ -280,6 +341,7 @@
   ([host timeout]
    (if-not (= :started @zk-client-state)
      (do
+       (utils/log-action "starting zookeeper client to '" host)
        (set-zk-config host timeout)
        (reset! zk-client-state :started))
      :already-started)))
@@ -295,6 +357,16 @@
           (zk/close @client)
           (reset! reconnect-count 0)))))
 
+
+(defn switch-zkclient
+  "Switch the zookeeper client to a new client host
+  Arguments:
+
+  "
+  [host]
+  (utils/log-action "Switching zookeeper client from '" @zk-url "' to '" host)
+  (stop-zkclient @zk-url)
+  (start-zkclient host))
 
 (defn get-zookeeper-config
   ""
@@ -516,10 +588,24 @@
     app-name - name of the app/module/repo to find config files for.
     :custom-path - Optional - path to the custom config edn text file to load into zookeeper."
   [from-location app-name & {:keys [custom-path]}]
-  (->> (if (= from-location ":custom")
+  (->> (if (= from-location :custom)
          (load-file custom-path)
          (get-config from-location app-name))
        (set-node-data! (str "/" constants/library-namespace "/config/" app-name)))
   (utils/log-action "setting zookeeper config setting " (str "/" constants/library-namespace "/config/" app-name)
                     " with contents of file " from-location " " custom-path))
 
+
+(defn compare-configs
+  [config1 config2 & {:keys [location1 location2]}]
+   (let [config-1 (if (string? config1) (get-config location1 config1) config1)
+         config-2 (if (string? config2) (get-config location2 config2) config2)
+         diffs (data/diff config-1 config-2)]
+     (binding [*print-right-margin* 140
+               *print-miser-width* 120]
+       (println "Portions of configs that are the same:")
+       (clojure.pprint/pprint (last diffs))
+       (println "\nPortions of first config that is unique:")
+       (clojure.pprint/pprint (first diffs))
+       (println "\nPortions of second config that is unique:")
+       (clojure.pprint/pprint (second diffs)))))

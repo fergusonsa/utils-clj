@@ -19,9 +19,17 @@
 
   The reasons for loading constants/configuration settings from a user specific file is to remove possibly sensitive information from the source code.
   "
-  (:require [clojure.java.io :as io])
+  (:refer-clojure :exclude [help])
+  (:require [clojure.java.io :as io]
+            [clojure.test])
   (:use [clojure.pprint])
   (:import [java.nio.file Files CopyOption]))
+
+
+(defn help
+  []
+  ((resolve 'utils.core/utils-help) 'utils.constants))
+
 
 (def constants-file-path
   "The path for the file containing the customized configuration settings for the user."

@@ -1,5 +1,6 @@
 (ns utils.core
   "Utility functions used by other namespaces in the utils project"
+  (:refer-clojure :exclude [help])
   (:require [utils.constants :as constants]
             [clojure.string :as string])
   (:use [clojure.pprint])
@@ -109,13 +110,6 @@
         (println "\n")))))
 
 
-(defn help
-  "Helper method in case someone uses \"help\" instead of \"utils-help\""
-  [& args]
-  (println "Should be using \"(utils.core/utils-help)\" instead of \"(utils.core/help)\"")
-  (apply utils-help args))
-
-
 (defn utils-help
   "Display help on the specified namespace, or the current one if not specified,
 
@@ -136,4 +130,12 @@
        (->> (ns-publics nm-space)
             (into (sorted-map))
             (map #(print-function-help-info % desired-fn-name)))))))
+
+
+(defn help
+  "Helper method in case someone uses \"help\" instead of \"utils-help\""
+  [& args]
+  (println "Should be using \"(utils.core/utils-help)\" instead of \"(utils.core/help)\"")
+  (apply utils-help args))
+
 

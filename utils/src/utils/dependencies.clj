@@ -1,5 +1,6 @@
 (ns utils.dependencies
   ""
+  (:refer-clojure :exclude [help])
   (:require [clj-http.client :as client]
             [cheshire.core :as json]
             [clj-time.format :as time-format]
