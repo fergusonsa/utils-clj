@@ -300,7 +300,11 @@
     :root-node - Optional - The root zookeeper node to include all sub nodes. Defaults to the root config node.
     :path - Optional - The path to the directory where the files will be placed. Defaults to the default report directory, 'utils.constants/reports-path."
   [node-path config-map path]
-  (let [file-path (str path (subs node-path 12) "/config.clj")]
+  (let [path-depth (count (clojure.string/split node-path #"/"))
+        ending (if (and (> 4 (count (clojure.string/split node-path #"/"))) (clojure.string/ends-with? node-path "config"))
+                 ".clj"
+                 "/config.clj")
+        file-path (str path (subs node-path 12) ending)]
     (clojure.java.io/make-parents file-path)
     (binding [*print-right-margin* 140
               *print-miser-width* 120]
