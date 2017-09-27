@@ -12,7 +12,8 @@
             [utils.core :as utils]
             [clojure.data :as data]
             [zookeeper :as zk]
-            [zookeeper.data :as zkdata])
+            [zookeeper.data :as zkdata]
+            [clojure.string :as str])
   (:use [clojure.pprint]
         [clojure.set :only [difference intersection]]
         [slingshot.slingshot :only [try+]])
@@ -131,7 +132,7 @@
                        [:data-sources :hippalectryon :solr-url]
                        [:data-sources :hippalectryon :solr-zookeeper-url]]}
     "bifrost" {:file-name "config.clj"
-               :source-config-path ""
+               :source-config-path "resources/bifrost/config.clj"
                :keys [[:inventory-solr-url]
                       [:event-service-solr-url]
                       [:reconciliation-solr-url]
@@ -156,10 +157,97 @@
               :keys [[:zookeeper :urls]]}})
 
 
+(def ValidIpAddressRegex #"(http[s]?:\/\/)?(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}(1[0-9]{2}|2[0-4][0-9]|25[0-5]|[1-9][0-9]|[0-9])(:[0-9]{1,6})?")
+
+
+(def ValidHostnameRegex #"(http[s]?:\/\/)?(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.){3,}([A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]|[A-Za-z0-9])(:[0-9]{1,6})?")
+
+(defn- tree-seq-filter
+  "Returns a lazy sequence of the nodes in a tree, via a depth-first walk.
+   branch? must be a fn of one arg that returns true if passed a node
+   that can have children (but may not).  children must be a fn of one
+   arg that returns a sequence of the children. Will only be called on
+   nodes for which branch? returns true. Root is the root node of the
+  tree."
+   [branch? children filter? root]
+   (let [walk (fn walk [node]
+                (lazy-seq
+                 (cons (if (filter? node) node nil)
+                  (when (branch? node)
+                    (mapcat walk (children node))))))]
+     (walk root)))
+
+(defn find-config-files
+  "A tree seq on java.io.Files"
+  [dir]
+  (filter #(not (nil? %))
+  (tree-seq-filter
+      (fn [^java.io.File f] (and (. f (isDirectory)) (not (contains? #{"example" "test" "orca" "exanova" "orca-env" "dev-env"} (. f (getName))))))
+      (fn [^java.io.File d] (seq (. d (listFiles))))
+      (fn [^java.io.File f] (or (str/ends-with? (. f (getName)) "config.edn")
+                                (str/ends-with? (. f (getName)) "_config.clj")))
+     dir)))
+
+(defn contains-hostname-ipaddress?
+  ""
+  [strng]
+  (or (not (nil? (re-matches ValidHostnameRegex strng)))
+      (not (nil? (re-matches ValidIpAddressRegex strng)))))
+
+(defn flatten-vector-check
+  [vect ]
+
+)
+; {
+;  "x" "x" ;; string value
+;  "y" 1   ;; integer value
+;  "z" [ "x" "u"] ;; vector
+;  "a" { "x" "u"} ;; map
+
+
+
+
+(defn flatten-keys
+  "based on https://stackoverflow.com/questions/32853004/iterate-over-all-keys-of-nested-map"
+  [m]
+  (if (not (map? m))
+    {[] m}
+    (into {}
+          (for [[k v] m
+                [ks v'] (flatten-keys v)]
+            (do
+              (println "k:" k " v:" v " ks:" ks " v':" v')
+            (cond
+              (string? v)
+              (if (contains-hostname-ipaddress? v)
+                [(cons k ks) v']
+                nil)
+              (or (number? v) (keyword? v) (symbol? v))
+              nil
+
+;;               (sequential? v)
+;;               (filter #(
+
+              :else [(cons k ks) v']))))))
+
+
+(defn check-file
+  [fl]
+  (let [contents (clojure.edn/read-string (slurp fl))]
+    (if (map? contents)
+      ())))
+
+(defn check-config-files
+  ""
+  [root-path]
+  ())
+
+
 (defn which-zookeeper
   "Show which zookeeper currently connected to"
   []
   (println "Current status" @zk-client-state "for zookeeper instance" @zk-url))
+
 
 (defn find-nested
   "Helper function to find nested values.
@@ -334,8 +422,8 @@
 (defn start-zkclient
   "Start function for Leaven ZKClient component"
   ([]
-   (if-not (or (nil? @zk-url)
-               (nil? @zktimeout))
+   (if (or (nil? @zk-url)
+           (nil? @zktimeout))
      (start-zkclient "127.0.0.1:2181" 60000)
      (start-zkclient @zk-url @zktimeout)))
   ([host]
@@ -397,7 +485,7 @@
      (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
 
      (= location :central)
-     (str config-path-root "/" app-name "/" (:file-name details))
+     (str config-path-root "/" app-name "/" (if (nil? details) "config.edn" (:file-name details)))
 
      (= location :orca)
      (str (str constants/workspace-root "/src/orca-env/current-env/target/tools01/application/" app-name "/" (:file-name details))
@@ -529,6 +617,9 @@
               (check-config-file app-name file-path details)
               (println))))))))
 
+(defn save-config-to-file
+  [app-name location config]
+  (spit (get-config-file-path location app-name) config))
 
 (defn replace-config-setting
   "
@@ -601,15 +692,32 @@
 
 
 (defn compare-configs
-  [config1 config2 & {:keys [location1 location2]}]
-   (let [config-1 (if (string? config1) (get-config location1 config1) config1)
-         config-2 (if (string? config2) (get-config location2 config2) config2)
-         diffs (data/diff config-1 config-2)]
+  ([app-name location1 location2]
+   (let [config-1 (get-config location1 app-name)
+         config-2 (get-config location2 app-name)]
+     (compare-configs config-1 config-2 location1 location2)))
+  ([config1 config2 desc1 desc2]
+   (let [diffs (data/diff config1 config2)
+         descript1 (if (nil? desc1) "first" desc1)
+         descript2 (if (nil? desc1) "second" desc2)]
      (binding [*print-right-margin* 140
-               *print-miser-width* 120]
+              *print-miser-width* 120]
        (println "Portions of configs that are the same:")
-       (clojure.pprint/pprint (last diffs))
-       (println "\nPortions of first config that is unique:")
-       (clojure.pprint/pprint (first diffs))
-       (println "\nPortions of second config that is unique:")
-       (clojure.pprint/pprint (second diffs)))))
+       (clojure.pprint/pprint (into (sorted-map) (last diffs)))
+       (println "\nPortions of" descript1 "config that is unique:")
+       (clojure.pprint/pprint (into (sorted-map) (first diffs)))
+       (println "\nPortions of" descript2 "config that is unique:")
+       (clojure.pprint/pprint (into (sorted-map) (second diffs)))))))
+
+(defn copy-config-from-to
+  ""
+  [app-name from-location to-location & {:keys [custom-path]}]
+  (let [config-to-save (if (= from-location :custom)
+                        (load-file custom-path)
+                        (get-config from-location app-name))]
+    (if (= to-location :zookeeper)
+      (set-node-data! (str "/" constants/library-namespace "/config/" app-name) config-to-save)
+      (spit (get-config-file-path to-location app-name) config-to-save)))
+  (utils/log-action "copying app config for " app-name
+                    " from " from-location " to " to-location " " custom-path))
+
