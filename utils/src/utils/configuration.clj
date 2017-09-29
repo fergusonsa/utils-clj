@@ -361,14 +361,20 @@
 
   Arguments:
     :root-node - Optional - The root zookeeper node to include all sub nodes. Defaults to the root config node.
-    :path - Optional - The path to the directory where the files will be placed. Defaults to the default report directory, 'utils.constants/reports-path."
-  [& {:keys [root-node path]
+    :path - Optional - The path to the directory where the files will be placed. Defaults to the default report directory, 'utils.constants/reports-path.
+    :file-name - Optional - The file name (without the extension) to save to. Defaults to \"zookeeper-<env-name>-<root-node>\".
+    :extension - Optional - The extension for the file name to save to. Defaults to \".clj\".
+    :full-path - Optional - The full path, including filename for the file to save to. Overrides :path, :file-name, and :extension arguments."
+  [& {:keys [root-node path file-name extension full-path]
       :or {root-node (str "/" constants/library-namespace "/config")
-           path constants/reports-path}}]
-  (let [file-path (utils/get-report-file-name-path (str "zookeeper-"
-                                                        (environments/get-env-name @zk-url)
-                                                        (clojure.string/replace root-node #"/" "-"))
-                                                   :extension ".clj" :path path)]
+           path constants/reports-path
+           file-name (str "zookeeper-"
+                          (environments/get-env-name @zk-url)
+                          (clojure.string/replace root-node #"/" "-"))
+           extenstion ".clj"}}]
+  (let [file-path (if-not (nil? full-path)
+                    full-path
+                    (utils/get-report-file-name-path file-name :extension extension :path path))]
     (binding [*print-right-margin* 140
               *print-miser-width* 120]
       (with-open [fl (clojure.java.io/writer file-path)]
@@ -472,7 +478,8 @@
   Arguments:
     location - Possible values: :source - get the config files in the local code repositories
                                 :central - get the config files in the central config location
-                                :orca - get the config files in the orca configuration directories
+                                :orca-app - get the config files in the orca application configuration directories
+                                :orca-zookeeper - get the config files in the orca zookeeper configuration directories
                                 :zookeeper - Get the configuration
                Defaults to the central config location.
     app-name - name of the app/module/repo to find config files for.
@@ -487,11 +494,14 @@
      (= location :central)
      (str config-path-root "/" app-name "/" (if (nil? details) "config.edn" (:file-name details)))
 
-     (= location :orca)
-     (str (str constants/workspace-root "/src/orca-env/current-env/target/tools01/application/" app-name "/" (:file-name details))
+     (= location :orca-app)
+     (str constants/workspace-root "/src/orca-env/current-env/target/hosts/tools01/application/" app-name "/" (:file-name details))
+
+     (= location :orca-zookeeper)
+     (str constants/workspace-root "/src/orca-env/current-env/target/zookeeper/" app-name "/config.zk.edn")
 
      (= location :zookeeper)
-     nil))))
+     nil)))
 
 
 (defn get-config
@@ -499,7 +509,8 @@
   Arguments:
     location - Possible values: :source - get the config files in the local code repositories
                                 :central - get the config files in the central config location
-                                :orca - get the config files in the orca configuration directories
+                                :orca-app - get the config files in the orca app configuration directories
+                                :orca-zookeeper - get the config files in the orca zookeeper configuration directories
                                 :zookeeper - Get the configuration
                Defaults to the central config location.
     app-name - name of the app/module/repo to find config files for.
@@ -509,7 +520,7 @@
    (get-config location app-name (get configs-to-check app-name)))
   ([location app-name details]
    (cond
-     (contains? #{:source :central :orca} location)
+     (contains? #{:source :central :orca-app :orca-zookeeper} location)
      (-> (get-config-file-path location app-name details)
          (load-file))
 
@@ -532,6 +543,18 @@
    (->> [:source :central :orca]
         (map get-config-file-path)
         (filter #(.exists (io/file %))))))
+
+
+(defn save-zookeeper-config-to-orca
+  ""
+  [app-name]
+  (let [pth (str constants/src-root-dir "/orca-env/current-env/target/zookeeper/" app-name "/config.zk.edn")
+        dest-file (clojure.java.io/file pth)]
+    (if (.exists dest-file)
+      (clojure.java.io/copy dest-file (clojure.java.io/file (str pth "." (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))))
+      (clojure.java.io/make-parents pth))
+    (save-zookeeper-config-to-file :root-node (str "/" constants/library-namespace "/config/" app-name)
+                                   :full-path pth)))
 
 
 (defn check-config-file
@@ -617,9 +640,11 @@
               (check-config-file app-name file-path details)
               (println))))))))
 
+
 (defn save-config-to-file
   [app-name location config]
   (spit (get-config-file-path location app-name) config))
+
 
 (defn replace-config-setting
   "
