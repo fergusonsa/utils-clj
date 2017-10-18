@@ -87,6 +87,34 @@
       (spit log-file (format "%s %-40.40s %s\n" timestamp-str calling-function message) :append (.exists (clojure.java.io/file log-file))))))
 
 
+(defn- print-var-help-info
+  [fn-mapentry]
+  (let [fn-name (key fn-mapentry)
+        var (val fn-mapentry)
+        meta-info (meta var)
+        instance (.get var)]
+    (if-not (clojure.test/function? instance)
+      (do
+        (if (= (type instance) clojure.lang.Atom)
+          (println (type @instance) "(atom)" fn-name "")
+          (println (type instance) fn-name ""))
+        (if (:doc meta-info)
+          (println " " (string/trim (:doc meta-info))))
+        (println "\n")))))
+
+(defn show-local-vars
+  ([]
+   (show-local-vars *ns*))
+  ([name-space]
+   (binding [*print-right-margin* 140
+             *print-miser-width* 120]
+     (println)
+     (let [nm-space (if (string? name-space) (symbol name-space) name-space)]
+       (->> (ns-publics nm-space)
+            (into (sorted-map))
+            (map #(print-var-help-info %)))))))
+
+
 (defn- print-function-help-info
   [fn-mapentry desired-fn-name]
   (let [fn-name (key fn-mapentry)
@@ -123,7 +151,8 @@
   ([]
    (utils-help *ns*))
   ([name-space & [desired-fn-name]]
-   (binding [*print-right-margin* 140]
+   (binding [*print-right-margin* 140
+             *print-miser-width* 120]
      (println)
      (let [nm-space (if (string? name-space) (symbol name-space) name-space)
            pattern (if (nil? desired-fn-name) nil (re-pattern desired-fn-name))]

@@ -103,8 +103,8 @@
     (for [x (get-alarm-names)] 
       (re-find #"^[a-zA-Z_]*" x))))
 
-(defn raise-alarm-of-type [type]
-  (let [alrm-name (rand-nth (filter-alarm-names (str type ":")))]
+(defn raise-alarm-of-type [alarm-type]
+  (let [alrm-name (rand-nth (filter-alarm-names (str alarm-type ":")))]
     (println "submitting " alrm-name)
     (swap! submitted-alarms conj alrm-name)
     (send-vsm alrm-name :Failed scotts-description)))    

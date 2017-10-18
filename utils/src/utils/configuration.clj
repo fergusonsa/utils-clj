@@ -180,31 +180,21 @@
 (defn find-config-files
   "A tree seq on java.io.Files"
   [dir]
-  (filter #(not (nil? %))
-  (tree-seq-filter
-      (fn [^java.io.File f] (and (. f (isDirectory)) (not (contains? #{"example" "test" "orca" "exanova" "orca-env" "dev-env"} (. f (getName))))))
-      (fn [^java.io.File d] (seq (. d (listFiles))))
-      (fn [^java.io.File f] (or (str/ends-with? (. f (getName)) "config.edn")
-                                (str/ends-with? (. f (getName)) "_config.clj")))
-     dir)))
+  (let [root-dir (clojure.java.io/file dir)]
+    (filter #(not (nil? %))
+      (tree-seq-filter
+        (fn [^java.io.File f] (and (. f (isDirectory)) (not (contains? #{"target" "example" "test" "orca" "exanova" "exanova-templates" "orca-env" "dev-env"}
+                                                                       (. f (getName))))))
+        (fn [^java.io.File d] (seq (. d (listFiles))))
+        (fn [^java.io.File f] (or (str/ends-with? (. f (getName)) "config.edn")
+                                  (str/ends-with? (. f (getName)) "_config.clj")))
+       root-dir))))
 
 (defn contains-hostname-ipaddress?
   ""
   [strng]
   (or (not (nil? (re-matches ValidHostnameRegex strng)))
       (not (nil? (re-matches ValidIpAddressRegex strng)))))
-
-(defn flatten-vector-check
-  [vect ]
-
-)
-; {
-;  "x" "x" ;; string value
-;  "y" 1   ;; integer value
-;  "z" [ "x" "u"] ;; vector
-;  "a" { "x" "u"} ;; map
-
-
 
 
 (defn flatten-keys
@@ -216,11 +206,11 @@
           (for [[k v] m
                 [ks v'] (flatten-keys v)]
             (do
-              (println "k:" k " v:" v " ks:" ks " v':" v')
+;;               (println "k:" k " v:" v " ks:" ks " v':" v')
             (cond
               (string? v)
               (if (contains-hostname-ipaddress? v)
-                [(cons k ks) v']
+                [(vec (apply list (cons k ks))) v']
                 nil)
               (or (number? v) (keyword? v) (symbol? v))
               nil
@@ -228,19 +218,38 @@
 ;;               (sequential? v)
 ;;               (filter #(
 
-              :else [(cons k ks) v']))))))
+              :else [(vec (apply list (cons k ks))) v']))))))
+
+
+(defn compare-vectors [a b]
+  (if (= (count a) (count b))
+    (compare a b)
+    (if (= (first a) (first b))
+      (compare-vectors (rest a) (rest b))
+      (compare (first a) (first b)))))
 
 
 (defn check-file
   [fl]
   (let [contents (clojure.edn/read-string (slurp fl))]
     (if (map? contents)
-      ())))
+      (->> contents
+           (flatten-keys)
+           (filter (fn [[k v]] (and (string? v) (contains-hostname-ipaddress? v))))
+;;            (into {})
+           (into (sorted-map-by compare-vectors))
+           ))))
+
 
 (defn check-config-files
   ""
-  [root-path]
-  ())
+  ([]
+   (check-config-files constants/src-root-dir))
+  ([root-path]
+   (->> root-path
+        (find-config-files)
+        (map #(list % (check-file %)))
+        (filter (fn [[k v]] (seq v))))))
 
 
 (defn which-zookeeper
@@ -301,10 +310,24 @@
     @client))
 
 
+(defn create-node!
+  ([^String node]
+   (locking client
+     (let [client (get-client)]
+       (create-node! client node))))
+  ([client ^String node]
+   (let [parent-node ()]
+     (if-not (zk/exists client parent-node)
+       (create-node! parent-node))
+     (zk/create-all client node :persistent? true))))
+
+
 (defn set-node-data!
   ([^String node data]
    (locking client
      (let [client (get-client)]
+       (if-not (zk/exists client node)
+         (zk/create-all client node :persistent? true))
        (when-let [version (:version (zk/exists client node :watch? true))]
          (set-node-data! node data version)))))
   ([^String node data version]
@@ -317,10 +340,19 @@
   "Returns the data associated with the given node if it exists."
   ([^String node]
    (locking client
+     (println "getting zookeeper node data for" node)
      (let [client (get-client)]
        (if-let [raw-data (:data (zk/data client node :watch? true))]
-         (let [return-data (edn/read-string (zkdata/to-string raw-data))]
-           return-data))))))
+         (try+
+           (->> raw-data
+                (zkdata/to-string)
+;;                 #(str/replace % #"\n" "")
+                (edn/read-string))
+;;            (let [return-data (edn/read-string (zkdata/to-string raw-data))]
+;;              return-data)
+         (catch Object _
+           (println "***** Exception trying to get node data for" node)
+           (zkdata/to-string raw-data))))))))
 
 
 (defn set-zk-config
@@ -349,10 +381,12 @@
    (get-all-zookeeper-config (str "/" constants/library-namespace "/config")))
   ([node]
    (->> node
+        (#(str/replace % #"//" "/"))
         (get-children)
         (map #(->> (str node "/" %)
+                   ((fn [strng] (str/replace strng #"//" "/")))
                    (get-all-zookeeper-config)))
-        (into {})
+        (into (sorted-map))
         (merge {node (get-node-data node)}))))
 
 
@@ -371,7 +405,7 @@
            file-name (str "zookeeper-"
                           (environments/get-env-name @zk-url)
                           (clojure.string/replace root-node #"/" "-"))
-           extenstion ".clj"}}]
+           extension ".clj"}}]
   (let [file-path (if-not (nil? full-path)
                     full-path
                     (utils/get-report-file-name-path file-name :extension extension :path path))]
@@ -381,9 +415,8 @@
         (.write fl (str "; Zookeeper central configurations on server " @zk-url " \n"))
         (-> (get-all-zookeeper-config root-node)
             ((partial into (sorted-map)))
-            (clojure.pprint/pprint fl)))
-      (println "Wrote zookkeeper config data for" @zk-url "to file" file-path))
-
+            (clojure.pprint/pprint fl))))
+    (println "Wrote zookkeeper config data for" @zk-url "to file" file-path)
     (utils/log-action "saving zookeeper configs starting at node '" root-node "' to 1 file '" file-path "'.")))
 
 
@@ -420,7 +453,7 @@
     :path - Optional - The path to the directory where the files will be placed. Defaults to the default report directory, 'utils.constants/reports-path."
   [& {:keys [root-node path]
       :or {root-node (str "/" constants/library-namespace "/config")
-           path (str constants/workspace-root "/zk-configs/" @zk-url "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))}}]
+           path (str constants/workspace-root "/zk-configs/" (clojure.string/replace @zk-url #":" "_") "-" (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss") (new java.util.Date)))}}]
   (let [configs (get-all-zookeeper-config root-node)]
     (map #(if-not (nil? (second %)) (save-zookeeper-config-to-individual-file (first %) (second %) path)) configs)))
 
@@ -480,15 +513,14 @@
                                 :central - get the config files in the central config location
                                 :orca-app - get the config files in the orca application configuration directories
                                 :orca-zookeeper - get the config files in the orca zookeeper configuration directories
-                                :zookeeper - Get the configuration
-               Defaults to the central config location.
+               All other values will return nil.
     app-name - name of the app/module/repo to find config files for.
     details - Optional, the entry from 'utils.core/configs-to-check for the specified app."
   ([location app-name]
    (get-config-file-path location app-name (get configs-to-check app-name)))
   ([location app-name details]
    (cond
-     (= location :source)
+     (and (= location :source) (not (nil? (:source-config-path details))))
      (str constants/workspace-root "/src/" app-name "/" (:source-config-path details))
 
      (= location :central)
@@ -500,25 +532,25 @@
      (= location :orca-zookeeper)
      (str constants/workspace-root "/src/orca-env/current-env/target/zookeeper/" app-name "/config.zk.edn")
 
-     (= location :zookeeper)
+     :else
      nil)))
 
 
 (defn get-config
   "
   Arguments:
+    app-name - name of the app/module/repo to find config files for.
     location - Possible values: :source - get the config files in the local code repositories
                                 :central - get the config files in the central config location
                                 :orca-app - get the config files in the orca app configuration directories
                                 :orca-zookeeper - get the config files in the orca zookeeper configuration directories
                                 :zookeeper - Get the configuration
                Defaults to the central config location.
-    app-name - name of the app/module/repo to find config files for.
     details - Optional, the entry from 'utils.core/configs-to-check for the specified app."
 
-  ([location app-name]
-   (get-config location app-name (get configs-to-check app-name)))
-  ([location app-name details]
+  ([app-name location ]
+   (get-config app-name location (get configs-to-check app-name)))
+  ([app-name location details]
    (cond
      (contains? #{:source :central :orca-app :orca-zookeeper} location)
      (-> (get-config-file-path location app-name details)
@@ -555,6 +587,28 @@
       (clojure.java.io/make-parents pth))
     (save-zookeeper-config-to-file :root-node (str "/" constants/library-namespace "/config/" app-name)
                                    :full-path pth)))
+
+
+(defn load-zookeeper-config-from-files
+  ""
+  ([^String path ]
+   (load-zookeeper-config-from-files (clojure.java.io/file path) "/cenx/config"))
+  ([^java.io.File fl node-path]
+   (cond
+     (.isFile fl)
+     (->> fl
+          (.getAbsolutePath)
+          (load-file)
+          (sorted-map (str node-path (if (str/starts-with? (.getName fl) "config.")
+                                           ""
+                                           (str "/" (first (clojure.string/split (.getName fl) #"\.")))))))
+     (.isDirectory fl)
+     (->> fl
+          (.listFiles)
+          (filter #(or (.isDirectory %) (and (.isFile %) (or (str/ends-with? (.getName %) ".clj") (str/ends-with? (.getName %) ".edn")))))
+          (map #(load-zookeeper-config-from-files % (str node-path "/" (.getName fl))))
+          (into (sorted-map))
+   ))))
 
 
 (defn check-config-file
@@ -708,18 +762,46 @@
     app-name - name of the app/module/repo to find config files for.
     :custom-path - Optional - path to the custom config edn text file to load into zookeeper."
   [from-location app-name & {:keys [custom-path]}]
-  (->> (if (= from-location :custom)
-         (load-file custom-path)
-         (get-config from-location app-name))
-       (set-node-data! (str "/" constants/library-namespace "/config/" app-name)))
-  (utils/log-action "setting zookeeper config setting " (str "/" constants/library-namespace "/config/" app-name)
-                    " with contents of file " from-location " " custom-path))
+  (let [node-path (str "/" constants/library-namespace "/config/" app-name)
+        config-data (if (= from-location :custom)
+                      (load-file custom-path)
+                      (get-config app-name from-location))]
+    (set-node-data! node-path config-data)
+;;     (clojure.pprint/pprint config-data)
+;;   (->> (if (= from-location :custom)
+;;          (load-file custom-path)
+;;          (get-config app-name from-location))
+;;        (set-node-data! node-path))
+    (utils/log-action "setting zookeeper config setting " node-path
+                      " with contents of file " from-location " " custom-path)
+    (println "setting zookeeper config setting " node-path
+                      " with contents of file " from-location " " custom-path)))
 
 
 (defn compare-configs
+  "
+  Arguments:
+  Either
+    app-name - name of the app/module/repo to find config files for.
+    location1 - Possible values: :source - get the config files in the local code repositories
+                                 :central - get the config files in the central config location
+                                 :orca-app - get the config files in the orca app configuration directories
+                                 :orca-zookeeper - get the config files in the orca zookeeper configuration directories
+                                 :zookeeper - Get the configuration
+    location2 - Possible values: :source - get the config files in the local code repositories
+                                 :central - get the config files in the central config location
+                                 :orca-app - get the config files in the orca app configuration directories
+                                 :orca-zookeeper - get the config files in the orca zookeeper configuration directories
+                                 :zookeeper - Get the configuration
+  Or
+    config1 - a map to be compared
+    config2 - a second map to be compared
+    desc1 - a string containing a description of the first map, config1, used for display only
+    desc2 - a string containing a description of the second map, config2, used for display only
+  "
   ([app-name location1 location2]
-   (let [config-1 (get-config location1 app-name)
-         config-2 (get-config location2 app-name)]
+   (let [config-1 (get-config app-name location1)
+         config-2 (get-config app-name location2)]
      (compare-configs config-1 config-2 location1 location2)))
   ([config1 config2 desc1 desc2]
    (let [diffs (data/diff config1 config2)
@@ -734,15 +816,33 @@
        (println "\nPortions of" descript2 "config that is unique:")
        (clojure.pprint/pprint (into (sorted-map) (second diffs)))))))
 
+
 (defn copy-config-from-to
-  ""
+  "
+  Arguments:
+  Either
+    app-name - name of the app/module/repo to find config files for.
+    from-location - Possible values: :source - get the config files in the local code repositories
+                                     :central - get the config files in the central config location
+                                     :orca-app - get the config files in the orca app configuration directories
+                                     :orca-zookeeper - get the config files in the orca zookeeper configuration directories
+                                     :zookeeper - Get the configuration
+                                     :custom - Get the config file from the path specified in the :custom-path argument.
+    to-location - Possible values: :source - get the config files in the local code repositories
+                                   :central - get the config files in the central config location
+                                   :orca-app - get the config files in the orca app configuration directories
+                                   :orca-zookeeper - get the config files in the orca zookeeper configuration directories
+                                   :zookeeper - Get the configuration
+    :custom-path - Optional - path to the custom config edn text file to load into zookeeper when the from-location argument is :custom."
   [app-name from-location to-location & {:keys [custom-path]}]
   (let [config-to-save (if (= from-location :custom)
                         (load-file custom-path)
-                        (get-config from-location app-name))]
+                        (get-config app-name from-location))]
     (if (= to-location :zookeeper)
       (set-node-data! (str "/" constants/library-namespace "/config/" app-name) config-to-save)
       (spit (get-config-file-path to-location app-name) config-to-save)))
+  (println "Copying app config for " app-name
+                    " from " from-location " to " to-location " " custom-path)
   (utils/log-action "copying app config for " app-name
                     " from " from-location " to " to-location " " custom-path))
 
