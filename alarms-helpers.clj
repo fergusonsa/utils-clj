@@ -9,7 +9,8 @@
 ;; user=> (ns cenx.heimdallr.customers.vzw-mpn.debug)
 ;; cenx.heimdallr.customers.vzw-mpn.debug=> (load-string (slurp "/Users/fergusonsa/CENX/utils/alarms-helpers.clj"))
 ;; 
-(use 'cenx.heimdallr.customers.shared.vzw.debug) 
+(use 'cenx.heimdallr.customers.shared.vzw.debug)
+(use 'clojure.pprint) 
 ;;(use '[clj-time.core :exclude [second extend start]])
 
 
@@ -104,7 +105,7 @@
       (re-find #"^[a-zA-Z_]*" x))))
 
 (defn raise-alarm-of-type [alarm-type]
-  (let [alrm-name (rand-nth (filter-alarm-names (str alarm-type ":")))]
+  (let [alrm-name (rand-nth (filter-alarm-names (str type ":")))]
     (println "submitting " alrm-name)
     (swap! submitted-alarms conj alrm-name)
     (send-vsm alrm-name :Failed scotts-description)))    

@@ -34,10 +34,10 @@
 
 (defn is-controlled-module?
   "Checks to see if the module is a controlled module using the following rules:
-  - if the module is in the utils.dependencies-scraper/repository-dependency-info,
+  - if the module is in the utils.dependencies-scraper/module-dependency-info,
     and the :full-name that starts with the utils.constants/library-namespace setting."
   [module-name]
-  (if-let [dep-info (get @dependencies/repository-dependency-info module-name)]
+  (if-let [dep-info (get @dependencies/module-dependency-info module-name)]
     (if-let [full-name (get (second (first dep-info)) :full-name)]
       (.startsWith full-name (str constants/library-namespace "/"))
       false)
@@ -56,31 +56,6 @@
      (clj-jgit.porcelain/with-repo (str root-path "/" repo-name)
        repo)
      nil)))
-
-
-(defn get-release-branches
-  "Returns a sequence of maps containing
-        {:name \"<branch-name>\" :target {:date \"YYYY-mm-ddTHH:MM:SS+00:00\"}}
-   for all branches that start with \"r/\" in the manifest repo."
-  [& {:keys [url]
-      :or {url (str "https://api.bitbucket.org/2.0/repositories/"
-                    constants/bitbucket-root-user
-                    "/exanova/refs/branches?q=name+%7E+%22r/%22"
-                    "&fields=-values.links,-values.type,-values.target.hash,"
-                    "-values.target.repository,-values.target.author,-values.target.parents,"
-                    "-values.target.links,-values.target.type,-values.target.message")}}]
-   (let [results (:body (client/get url
-                            {:content-type :json
-                             :basic-auth [(:user utils.identity/identity-info)
-                                          (:password utils.identity/identity-info)]
-                             :throw-exceptions false
-                             :as :json}))]
-      (into (sorted-map)
-            (concat (map #(sorted-map (get-in % [:target :date]) (:name %)) (:values results))
-                    (if (get results :next)
-                      (get-release-branches :url (get results :next))
-                      {})))))
-
 
 (defn get-repo-refs
   "Returns a sequence of maps containing
@@ -124,18 +99,14 @@
                              :throw-exceptions false}))]
     results))
 
-(defn get-repo-branches
-  "
-  Arguments:
-    repo-name - The name of the repo/application.
-    :url <value> - Optional -
-  "
-  [repo-name & {:keys [url]
+(defn get-release-branches
+  "Returns a sequence of maps containing
+        {:name \"<branch-name>\" :target {:date \"YYYY-mm-ddTHH:MM:SS+00:00\"}}
+   for all branches that start with \"r/\" in the manifest repo."
+  [& {:keys [url]
       :or {url (str "https://api.bitbucket.org/2.0/repositories/"
                     constants/bitbucket-root-user
-                    "/" repo-name
-                    "/refs/branches"
-                    "?q=name+%7E+%22r/%22"
+                    "/exanova/refs/branches?q=name+%7E+%22r/%22"
                     "&fields=-values.links,-values.type,-values.target.hash,"
                     "-values.target.repository,-values.target.author,-values.target.parents,"
                     "-values.target.links,-values.target.type,-values.target.message")}}]
@@ -147,10 +118,105 @@
                              :throw-exceptions false
                              :as :json}))]
       (into (sorted-map)
-            (concat (map #(hash-map (:name %) (get-in % [:target :date])) (:values results))
+            (concat (map #(sorted-map (get-in % [:target :date]) (:name %)) (:values results))
                     (if (get results :next)
-                      (get-repo-branches :url (get results :next))
+                      (get-release-branches :url (get results :next))
                       {})))))
+
+
+
+(defn get-repo-branches
+  "
+  Arguments:
+    repo-name - The name of the repo/application.
+    :url <value> - Optional -
+  "
+  [repo-name & {:keys [url]
+                :or {url (str "https://api.bitbucket.org/1.0/repositories/"
+                              constants/bitbucket-root-user
+                              "/" repo-name
+                              "/branches")}}]
+;;   (println url)
+  (let [results (:body (client/get url
+                                   {:content-type :json
+                                   :basic-auth [(:user utils.identity/identity-info)
+                                                (:password utils.identity/identity-info)]
+                                   :throw-exceptions false
+                                   :as :json}))]
+    (->> results
+         (keys)
+         (map name)
+         (into (sorted-set)))))
+
+(defn is-branch?
+  [repo-name branch-name]
+  (-> repo-name
+      (get-repo-branches)
+      (contains? branch-name)))
+
+(defn get-repo-tags
+  "
+  NOT WORKING YET
+  Arguments:
+    repo-name - The name of the repo/application.
+    :url <value> - Optional -
+  "
+  [repo-name & {:keys [url]
+                :or {url (str "https://api.bitbucket.org/1.0/repositories/"
+                              constants/bitbucket-root-user
+                              "/" repo-name
+                              "/tags")}}]
+  (println url)
+  (let [results (:body (client/get url
+                                   {:content-type :json
+                                   :basic-auth [(:user utils.identity/identity-info)
+                                                (:password utils.identity/identity-info)]
+                                   :throw-exceptions false
+                                   :as :json}))]
+;;     (->> results
+;;          (keys)
+;;          (map name)
+;;          (into (sorted-set)))
+    results
+    ))
+
+(defn is-tag?
+  "NOT WORKING YET"
+  [repo-name branch-name]
+  (-> repo-name
+      (get-repo-tags)
+      (contains? branch-name)))
+
+
+(defn get-repo-branches-tags
+  "
+  Arguments:
+    repo-name - The name of the repo/application.
+    :url <value> - Optional -
+  "
+  [repo-name & {:keys [url]
+                :or {url (str "https://api.bitbucket.org/1.0/repositories/"
+                              constants/bitbucket-root-user
+                              "/" repo-name
+                              "/branches-tags")}}]
+;;   (println url)
+  (let [results (:body (client/get url
+                                   {:content-type :json
+                                   :basic-auth [(:user utils.identity/identity-info)
+                                                (:password utils.identity/identity-info)]
+                                   :throw-exceptions false
+                                   :as :json}))]
+    (into (sorted-map)
+      (merge
+        (zipmap (map :name (:branches results)) (repeat :branches))
+        (zipmap (map :name (:tags results)) (repeat :tags))))))
+
+
+(defn is-branch-or-tag?
+  [repo-name branch-name]
+  (-> repo-name
+      (get-repo-branches-tags)
+      (get branch-name false)))
 
 
 ;; (defn get-repo-tags-recursive
@@ -361,11 +427,14 @@
   If the verson is not found and a git fetch has not been performed in the past hour,
   performs a git fetch and reties the git checkout."
   ([repo-name version]
+   (println "checkout-version-from-repo: repo-name:" repo-name " version:" version)
     (checkout-version-from-repo repo-name version (utils/get-tag repo-name version)))
   ([repo-name version proper-version]
+   (println "checkout-version-from-repo: repo-name:" repo-name " version:" version "proper-version:" proper-version)
     (clj-jgit.porcelain/with-repo (str constants/src-root-dir "/" repo-name)
       (checkout-version-from-repo repo repo-name version proper-version)))
   ([repo repo-name version proper-version]
+   (println "checkout-version-from-repo: repo repo-name:" repo-name " version:" version "proper-version:" proper-version)
     (try+
       (clj-jgit.porcelain/git-checkout repo (str "tags/" proper-version))
       (println "Repo" repo-name "now set to version" version)
@@ -421,11 +490,13 @@
 
   ([repo repo-name version]
    (let [proper-version (utils/get-tag repo-name version)]
+     (println "set-repo-version: proper-version:" proper-version)
     (if (not= proper-version (get-version-from-repo repo))
       (let [orig-status (clj-jgit.porcelain/git-status repo)
             orig-status-count (apply + (map #(count (second %))
                                             (select-keys orig-status
                                                          [:added :changed :missing :modified :removed])))]
+        (println "set-repo-version: orig-status:" orig-status)
         (if (> orig-status-count 0)
           (try+
             (clj-jgit.porcelain/git-create-stash repo)
@@ -433,7 +504,9 @@
               (println "\n** Exception trying to stash existing changes in the repo" repo-name)
               (println "** Check for existing conflicts in" (str constants/src-root-dir "/" repo-name)))))
         (try+
+          (println "set-repo-version: about to checkout-version-from-repo")
           (checkout-version-from-repo repo repo-name version proper-version)
+          (println "completed checkout")
           (catch RefNotFoundException e#
             (println "\n** Could not checkout/find the version" version "for repo" repo-name)
             (println "** Need to manually perform \"git fetch\" in " (str constants/src-root-dir "/" repo-name) "\n"))
@@ -540,6 +613,30 @@
        (println "No Non-third party library requirements for" repo-name "\n")))))
 
 
+(defn clone-repo
+  ""
+  [repo-name version]
+
+  (let [dest-dir (str constants/src-root-dir "/" repo-name)
+        source-url (str "git@bitbucket.org:" constants/bitbucket-root-user"/" repo-name ".git")]
+    (if (.isDirectory (clojure.java.io/file dest-dir))
+      (do ;; A local git repo for library module already exists. Just checkout the desired version.
+        (println "\nRepo" repo-name "already exists in" dest-dir)
+        (set-repo-version repo-name version)
+        (println "done"))
+      (do ;; There is not an existing git repo for this repo. Clone it and checkout the desired version.
+        (println "\nRepo" repo-name "does not exist in" dest-dir "and will be cloned from bitbucket")
+        (io/make-parents dest-dir)
+        (clj-jgit.porcelain/with-identity {:private (slurp constants/ssh-private-key-path)
+                                           :public (slurp constants/ssh-public-key-path)
+                                           :passphrase (:password utils.identity/identity-info)
+                                           :exclusive true}
+          (println "cloning....")
+          (let [repo (:repo (clj-jgit.porcelain/git-clone-full source-url dest-dir))]
+            (println "setting version...")
+            (set-repo-version repo repo-name version))
+          (println "done"))))
+    (println (get-repo-version repo-name))))
 
 
 (defn checkout-library-repos-for-module

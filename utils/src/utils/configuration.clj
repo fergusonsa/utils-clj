@@ -316,10 +316,7 @@
      (let [client (get-client)]
        (create-node! client node))))
   ([client ^String node]
-   (let [parent-node ()]
-     (if-not (zk/exists client parent-node)
-       (create-node! parent-node))
-     (zk/create-all client node :persistent? true))))
+   (zk/create-all client node :persistent? true)))
 
 
 (defn set-node-data!
@@ -340,7 +337,7 @@
   "Returns the data associated with the given node if it exists."
   ([^String node]
    (locking client
-     (println "getting zookeeper node data for" node)
+;;      (println "getting zookeeper node data for" node)
      (let [client (get-client)]
        (if-let [raw-data (:data (zk/data client node :watch? true))]
          (try+
@@ -353,6 +350,15 @@
          (catch Object _
            (println "***** Exception trying to get node data for" node)
            (zkdata/to-string raw-data))))))))
+
+
+(defn delete-node
+  "Removes a node from zookeeper."
+  ([^String node]
+   (locking client
+     (let [client (get-client)]
+       (println "removing zookeeper node \"%s\" and all its children" node)
+       (zk/delete-all client node)))))
 
 
 (defn set-zk-config

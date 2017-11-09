@@ -4,21 +4,78 @@
   (:require [utils.constants :as constants]
             [clojure.string :as string])
   (:use [clojure.pprint])
-  (:gen-class))
+  (:gen-class)
+  (:import [java.nio.file Files CopyOption]))
+
+
+(defn load-datastructure-from-file
+  ""
+  [file-path & {:keys [default]
+                :or {default {}}}]
+  (if (.exists (clojure.java.io/file file-path))
+    (read-string (slurp file-path))
+    default))
+
+
+(defn save-datastructure-to-file
+  ""
+  [data file-path]
+  (let [fl (clojure.java.io/file file-path)
+        indx (string/last-index-of file-path ".")]
+    (if (.exists fl)
+      (Files/move (.toPath fl) (.toPath (clojure.java.io/file (str (subs file-path indx)
+                                                                   "-"
+                                                                   (.format (java.text.SimpleDateFormat. "yyyyMMdd_HHmmss")
+                                                                            (new java.util.Date))
+                                                                   ".clj")))
+                  (into-array CopyOption {})))
+    (binding [*print-right-margin* 140
+              *print-miser-width* 120]
+      (with-open [fl (clojure.java.io/writer file-path)]
+        (-> data
+            (clojure.pprint/pprint fl))))))
+
+
+(defn strip-version
+  "Removes the repo name from the tag if it is present to get the version.
+  Examples of input and output:
+  Repo Name    Version        Response
+  ----------   -------------  ---------
+  appname      appname-1.2.0  1.2.0
+  appname      1.2.0          1.2.0
+
+  Arguments:
+    repo-name - name of the app/module/repo.
+    version - the version of the repo."
+  [repo-name version]
+  (if (.startsWith version (str repo-name "-"))
+    (subs version (count (str repo-name "-")))
+    version))
 
 
 (defn get-tag
   "Returns the proper tag for a version of a repo, usually in the format of \"<repo-name>-<version>\"
+  It will not append the repo name to the front of the tag if one of the following conditions is true:
+   - version is the default branch
+   - the repo name is already at the front of the version
+   - the version is a release branch, starting with \"r/\"
+   - the version is a fix branch, starting with \"f\"
 
   Arguments:
     repo-name - name of the app/module/repo.
     version - the version of the repo."
   [repo-name version]
   (if (not (string? version))
-    (println "!!!!!!!!!!!!!!!!!!!!!!!! version is not string! >" version "<"))
-  (if (or (= version constants/default-branch) (.startsWith version (str repo-name "-")))
-    version
-    (str repo-name "-" version)))
+    (if (sequential? version)
+      (get-tag repo-name (first version))
+      (println "!!!!!!!!!!!!!!!!!!!!!!!! version is not string! nor sequential >" version "<"))
+
+    (if (or (= version constants/default-branch)
+            (.startsWith version (str repo-name "-"))
+            (.startsWith version "r/")
+            (.startsWith version "f/"))
+      version
+      (str repo-name "-" version))))
 
 
 (defn check-optional-arguments-for-array

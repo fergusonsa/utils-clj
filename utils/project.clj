@@ -9,7 +9,8 @@
                  [clj-time "0.13.0"]
                  [clj-http "3.5.0"]
                  [slingshot "0.12.2"]
-                 [clj-jgit "0.8.9"]
+                 [clj-jgit "0.8.9" :exclusions [clj_jgit.test/core
+                                                clj_jgit.test/porcelain]]
                  [io.forward/yaml "1.0.6"]
                  [clojurewerkz/propertied "1.3.0"]
                  [version-clj "0.1.2"]

@@ -13,32 +13,77 @@
   (:use clojure.pprint
         clojure.core
         [clojure.set :only [difference intersection]]
-        [slingshot.slingshot :only [try+]]))
+        [slingshot.slingshot :only [try+]])
+  (:import [java.nio.file Files CopyOption]))
+
+(declare build-dependency-node)
+
 
 (def build-repo-dependency-node-repo-root (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/"))
 
+
 (defonce connection-info (atom {:url (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/")}))
 
-(defonce library_info (atom {}))
 
-(defn retrieve_library_info
-  [lib_name]
-  (let [lib_info (client/get (str "https://clojars.org/api/artifacts/" lib_name)
+(defonce repository-info-file-path (str constants/user-root-path "/.clojure-utils/repository-info.clj"))
+
+(defonce module-dependency-info-file-path (str constants/user-root-path "/.clojure-utils/module-dependency-info.clj"))
+
+(defonce library-info-file-path (str constants/user-root-path "/.clojure-utils/library-info.clj"))
+
+
+(defonce library-info (atom (utils/load-datastructure-from-file library-info-file-path)))
+
+
+(defonce repository-info (atom (utils/load-datastructure-from-file repository-info-file-path)))
+
+
+(defn save-library-info
+  []
+  (utils/save-datastructure-to-file @library-info library-info-file-path))
+
+(defn save-repository-info
+  []
+  (utils/save-datastructure-to-file @repository-info repository-info-file-path))
+
+
+(defn retrieve-library-info
+  [lib-name]
+  (let [lib-info (client/get (str "https://clojars.org/api/artifacts/" lib-name)
                                                                  {:as :json})]
-    (swap! library_info assoc lib_name (:body lib_info))
-    (:body lib_info)))
+    (swap! library-info assoc lib-name (:body lib-info))
+    (:body lib-info)))
 
-;;  repository-dependency-info should be storing stuff in this format:
+
+
+
+;;  module-dependency-info should be storing stuff in this format:
 ;; {"library1-name": {"version1": {:dependencies {"library2-name": {:name "library2-name" :version "versionA"},
 ;;                                                "library3-name": {:name "library3-name" :version "versionB"},...}},
 ;;                    "version2": {:dependencies {"library2-name": {:name "library2-name" :version "versionX"},
 ;;                                                "library4-name": {:name "library4-name" :version "versionC},...}},...}}
-(defonce repository-dependency-info (atom {}))
+(defonce module-dependency-info (atom (utils/load-datastructure-from-file module-dependency-info-file-path)))
 
-(defonce repository_info (atom {:dependencies (sorted-map) :libraries {} }))
 
-(defn get_library_info [lib_name]
-  (get @library_info lib_name (retrieve_library_info lib_name)))
+(defn get-library-info [lib-name]
+  (get @library-info lib-name (retrieve-library-info lib-name)))
+
+
+(defn save-module-dependency-info
+  []
+  (utils/save-datastructure-to-file @module-dependency-info module-dependency-info-file-path))
+
+
+(defn get-module-dependency-info
+  [module-name version]
+  (if-not (get-in @module-dependency-info [module-name version])
+    (build-dependency-node module-name version))
+  (get-in @module-dependency-info [module-name version]))
+
+
+(defn get-module-dependency-tree
+  [module-name version]
+  ())
 
 
 (defn strip-name-from-version
@@ -116,7 +161,11 @@
           modified_src (modify-project-clj-src project_cli_src repo-name)]
       (try+
         (if-let [project_clj (load-string modified_src)]
-            (dissoc (apply merge-with (comp vec flatten vector) (map (partial apply hash-map) (:dependencies project_clj))) :exclusions :excludes :only)
+            (dissoc
+              (apply merge-with
+                     (comp vec flatten vector)
+                     (map (partial apply hash-map) (:dependencies project_clj)))
+              :scope :inclusions :exclusions :excludes :only)
           :error-loading-project-data)
         (catch Object _
           (println "<><><><><><><><><><><><><><><><><><><><> ")
@@ -153,7 +202,7 @@
         :exception-getting-project-clj-file)))
 
 
-(defn xxx [repo_info]
+(defn get-repo-dependency-details [repo_info]
 ;;  (println (:name repo_info) "--" (:updated_on repo_info))
   { (:name repo_info) (if (> (compare (time-format/parse (time-format/formatter "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ")
                                      (:updated_on repo_info))
@@ -180,11 +229,11 @@
 ;;    (swap! connection-info assoc :url nil)
     ;(println "Page " (get-in results [:body :page]) "Next " (get-in results [:body :next]))
 ;;    (pprint repo_list_values)
-      (let [final-results (into {} (map xxx repo_list_values))]
-        (println "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
-        (println "Page results type: " (type final-results))
-        (pprint final-results)
-        (println "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+      (let [final-results (into {} (map get-repo-dependency-details repo_list_values))]
+;;         (println "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
+;;         (println "Page results type: " (type final-results))
+;;         (pprint final-results)
+;;         (println "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
         final-results))
     (catch Object _
       ;; An error occurred trying to get and parse the current repo list page.
@@ -200,26 +249,27 @@
       {})))
 
 
-(defn -main
+(defn find-dependencies-all-bitbucket
   ([]
     (println "Starting ----------------- " (:url @connection-info) "====")
     (while (not (nil? (:url @connection-info)))
       (let [page-results (parse-repo-list-page)]
-        (swap! repository_info assoc :dependencies (into (:dependencies @repository_info) page-results)))
+;;         (swap! module-dependency-info assoc-in [repo-name version] node)
+        (swap! repository-info assoc :dependencies (into (:dependencies @repository-info) page-results)))
       (println "##########after page " (:url @connection-info) "#########")
-      (pprint @repository_info)
+      (pprint @repository-info)
       (println "###################"))
     (println "Finished getting dependencies----------------- ")
-    (pprint @repository_info)
+    (pprint @repository-info)
     (println "Finished ----------------- ")
-    (let [log-file (utils/get-report-file-name-path  "bitbucket-dependency-scraper-logs")]
-      (spit log-file (pr-str @repository_info))
+    (let [log-file (utils/get-report-file-name-path  "bitbucket-dependency-scraper-logs" :extension ".clj")]
+      (spit log-file (pr-str @repository-info))
       (println "Wrote to file " log-file " ----------------- ")))
 
   ([page]
     (if (integer? page)
       (swap! connection-info assoc :url (str "https://api.bitbucket.org/2.0/repositories/" constants/bitbucket-root-user "/?page=" page)))
-    (-main)))
+    (find-dependencies-all-bitbucket)))
 
 
 (defn display-project-dependencies [& repos]
@@ -264,28 +314,28 @@
     (utils/log-action "(display-project-dependencies-diffs \"" repo-name "\" \"" v1 "\" \"" v2"\")")))
 
 
-(declare build-dependency-node)
 
 (defn build-repo-dependency-node [module-name version & {:keys [depth force-build] :or {depth 0
                                                                                       force-build false}}]
+  (println "building repo-node for \"" module-name "\" version \"" version "\" and depth" depth "and force-build" force-build)
   (let [repo-name (if (.startsWith module-name (str constants/library-namespace "/")) (subs module-name (count (str constants/library-namespace "/"))) module-name)
         tag (utils/get-tag repo-name version)
         deps (get-project-dependencies @connection-info repo-name tag repo-name)
         deps2 (if (keyword? deps) {} deps)
         node {:name repo-name
               :full-name module-name
-              :version version
+              :version (utils/strip-version repo-name version)
               :dependencies (reduce
                               (fn [m [k v]] (assoc m k (build-dependency-node k v :depth depth :force-build force-build)))
                               {}
                               deps2)}]
-    (swap! repository-dependency-info assoc-in [repo-name version] node)
+    (swap! module-dependency-info assoc-in [repo-name version] node)
     node))
 
 
 (defn build-external-dependency-node [module-name version]
   (let [node {:name module-name :version version}]
-    (swap! repository-dependency-info assoc-in [module-name version] node)
+    (swap! module-dependency-info assoc-in [module-name version] node)
     node))
 
 
@@ -293,7 +343,7 @@
                                                                                    force-build false}}]
 ;;   (println "building node for \"" module-name "\" version \"" version "\" and depth" depth "and force-build" force-build)
   (let [sub-name (if (.startsWith module-name (str constants/library-namespace "/")) (subs module-name (count (str constants/library-namespace "/"))) module-name)]
-    (let [already-saved-node (get-in @repository-dependency-info [sub-name version])]
+    (let [already-saved-node (get-in @module-dependency-info [sub-name version])]
       (if (and already-saved-node (not force-build))
         already-saved-node
         (if (.startsWith module-name (str constants/library-namespace "/"))
@@ -366,7 +416,8 @@
   [& args]
   (doseq [[repo-name version] (if (map? args) args (apply hash-map args))]
     (let [log-file (utils/get-report-file-name-path (str repo-name "-" version "-dependency-tree")
-                                                    :subdirectory "dependency-trees")]
+                                                    :subdirectory "dependency-trees"
+                                                    :extension ".clj")]
       (->> (find-module-dependencies repo-name version)
             (make-tree-readable)
             (spit log-file))
@@ -375,13 +426,23 @@
 
 
 (defn coallate-dependencies-versions
-  ""
+  "
+
+  Arguements:
+   deps - module dependenct tree containing the depenencies of the top level module.
+
+  Returns a hash-map containing the names of all of the libraries present in the dependency tree as keys, and the "
   [deps]
-  (if (map? deps)
-    (if (get deps :name)
+  (let [deps-act (cond
+                   (map? deps)
+                   deps
+
+                   (string? deps)
+                   ())]
+    (if (get deps-act :name)
       (try+
-        (let [base-map {(:name deps) (sorted-set-by version/version-compare (strip-name-from-version (:name deps) (:version deps)))}
-              sub-deps (get deps :dependencies)]
+        (let [base-map {(:name deps-act) (sorted-set-by version/version-compare (strip-name-from-version (:name deps-act) (:version deps-act)))}
+              sub-deps (get deps-act :dependencies)]
           (merge-with into (hash-map)
                       base-map
                       (if (nil? sub-deps)
@@ -389,14 +450,37 @@
                         (apply merge-with into (hash-map) (map coallate-dependencies-versions (vals sub-deps))))))
         (catch Object _
           (println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-          (pprint deps)
+          (pprint deps-act)
           (println (:object &throw-context))
           (println (:message &throw-context))
           (println (:cause &throw-context))
           (println (:stack-trace &throw-context))
-          (println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"))))
-    (println "deps is not a map:" deps ":")))
+          (println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")))
+      (println ""))))
 
 
-(defn coallate-dependencies-versions-sorted [deps]
+(defn coallate-dependencies-versions-sorted
+  "Helper function that wraps 'coallate-dependencies-versions to return a sorted-map of the results."
+  [deps]
   (into (sorted-map) (coallate-dependencies-versions deps)))
+
+
+(defn find-modules-using-library
+  ""
+  [module-name]
+  (let [lib-name (if (.startsWith module-name "cenx/") module-name (str "cenx/" module-name))]
+;;     (->> @repository-info
+;;         (:dependencies)
+;;         (filter (fn [[k v]] (and (map? v) (some #(= % lib-name) (keys v))))))))
+    (filter (fn [[k v]] (and (map? v) (some #(= % lib-name) (keys v)))) (:dependencies @repository-info))))
+
+(defn find-modules-using-library2
+  ""
+  [module-name]
+  (let [lib-name (if (.startsWith module-name "cenx/") module-name (str "cenx/" module-name))]
+;;     (->> @repository-info
+;;         (:dependencies)
+;;         (filter (fn [[k v]] (and (map? v) (some #(= % lib-name) (keys v))))))))
+    (filter (fn [[k1 v1]]
+              (pos? (count (disj (reduce conj #{} (map (fn [[k2 v2]] (get-in v2 [:dependencies module-name])) v1)) nil))))
+            @module-dependency-info)))

@@ -7,6 +7,7 @@
     library-namespace - The namespace containing all the controlled clojure libraries, such that <library-namespace>.<library-name> is the namespace for a library.
     nexus-url-base - The root url for checking for released versions of libraries and applications in a nexus repository
     reports-path - The root directory where reports are to be stored. Defaults to ~/reports
+    available-src-roots - A vector containing directories containing various versions of sources
     src-root-dir - The root directory where local git repositories are located for each clojure module/application/library.
     central-config-root-dir - The root directory where the central config files for all applications are located.
     ssh-private-key-path - The path to the private rsa key file. Defaults to ~/.ssh/id_rsa
@@ -43,6 +44,8 @@
                                        :doc "The root directory where local git repositories are located for each clojure module/application/library."}
                "workspace-root" {:value (str (System/getProperty "user.home") "/ROOT")
                                  :doc "The path to the root directory for the workspace."}
+               "available-src-roots" {:doc "A vector containing directories containing various versions of sources."
+                                          :value  ["/ROOT/src"]},
                "src-root-dir" {:value (str (System/getProperty "user.home") "/ROOT/src")
                                :doc "The root directory where local git repositories are located for each clojure module/application/library."}
                "central-config-root-dir" {:value "/opt/config/application"
@@ -124,3 +127,29 @@
 
 ;Load the configuration
 (load-constants)
+
+
+(defn- parse-int [s]
+  (Integer/parseInt (re-find #"\A-?\d+" s)))
+
+
+(defn set-src-root!
+  ([]
+   (let [available-roots (zipmap (range 1 (+ (count available-src-roots) 1)) available-src-roots)]
+     (pprint available-roots)
+     (binding [*print-right-margin* 30
+              *print-miser-width* 12]
+     (pprint available-src-roots))
+     (println "Available source root directories:")
+;;      (map #(println %) available-roots)
+     (doseq [[k v] available-roots]
+       (println "  " k ":" v))
+;;      (map #(doall (println "  " (key %) ":" (val %)(flush))) available-roots)
+     (flush)
+     (print "Enter the number of the directory to use and hit <Enter>: ")
+     (flush)
+     (set-src-root! (get available-roots (parse-int (read-line))))))
+  ([new-root-path]
+   (if (.isDirectory (io/file new-root-path))
+     (alter-var-root #'src-root-dir (constantly new-root-path))
+     (println new-root-path "is not a valid directory containing source."))))
