@@ -10,6 +10,7 @@
             [clj-time.format :as time-format]
             [utils.fake :as creds]
             [utils.core :as utils]
+            [utils.diff-as-list :as diff]
             [clojure.data :as data]
             [zookeeper :as zk]
             [zookeeper.data :as zkdata]
@@ -40,121 +41,7 @@
                             source repository.
       :keys - a list of lists of keys for entries in the config files that have environment
               dependent values, these will be used in 'clojure.core/get-in calls to get the values."
-  {
-    "conduit" {:file-name "config.edn"
-               :source-config-path "dev/resources/config.edn"
-               :keys [[ "nested" :url]]}
-    "heimdallr" {:file-name "config.edn"
-                 :source-config-path "resources/heimdallr/config.edn"
-                 :keys [[:full :elm-url]
-                        [:full :zk :urls]
-                        [:build :zk :urls]]}
-    "naranathu" {:file-name "config.edn"
-                 :source-config-path "resources/config.edn"
-                 :keys [[:containers :ingest :host]]}
-    "stentor" {:file-name "config.edn"
-               :source-config-path ""
-               :keys [[:host]]}
-    "epiphany" {:file-name "config.edn"
-                :source-config-path ""
-                :keys [[:security :ldap :host]
-                       [:rethinkdb :host]
-                       [:solr-url]
-                       [:inventory-collection]
-                       [:inventory-collection-url]
-                       [:alarms-collection-url]
-                       [:events-collection-url]
-                       [:analytics-api-url]]}
-    "huginn" {:file-name "config.clj"
-              :source-config-path ""
-              :keys [[:solr-url]
-                     [:zk-url]]}
-    "parker" {:file-name "config.edn"
-              :source-config-path "resources/config.edn"
-              :keys [[:kafka :local "metadata.broker.list"]
-                     [:solr :local :url]
-                     [:solr :local :zookeeper-url]
-                     [:analytics-index :local :url]
-                     [:analytics-index :local :zookeeper-url]
-                     [:event-service-config :solr-url]
-                     [:event-service-config :zookeeper-url]
-                     [:event-service-config :solr-zookeeper-url]]}
-    "stores/apollo/resources" {:file-name "config.edn"
-                               :source-config-path ""
-                               :keys [[:inventory-websocket-endpoint]
-                                      [:inventory-base-url]
-                                      [:audit-base-url]
-                                      [:presentation-base-url]
-                                      [:search-service-base-url]
-                                      [:conduit-url]
-                                      [:webxng-url]
-                                      [:ops-tracker-url]
-                                      [:analytics-base-url]
-                                      [:adhoc-base-url]]}
-    "apollo" {:file-name "config.edn"
-              :source-config-path "dev/resources/config.edn"
-              :keys [[:presentation-base-url]
-                     [:search-service-base-url]
-                     [:analytics-base-url]
-                     [:data-driven-ui]
-                     [:audit-base-url]
-                     [:conduit-url]
-                     [:client-logging-service-url]]}
-    "icarus" {:file-name "config.edn"
-              :source-config-path "resources/config.edn"
-              :keys [[:db-spec :subname]
-                     [:change-control-solr :url]
-                     [:trouble-ticket-solr :url]
-                     [:parker-solr :url]]}
-    "athena" {:file-name "config.edn"
-              :source-config-path ""
-              :keys [[:full :db-uri]
-                     [:full :solr-url]
-                     [:full :solr-zk-url]
-                     [:full :es-kafka-url]
-                     [:full :es-zk-url]
-                     [:build :db-uri]
-                     [:build :solr-url]
-                     [:build :solr-zk-url]
-                     [:build :es-kafka-url]
-                     [:build :es-zk-url]]}
-    "granitedb" {:file-name "config.clj"
-                 :source-config-path ""
-                 :keys [[:host]]}
-    "ripper" {:file-name "db_config.clj"
-              :source-config-path ""
-              :keys [[:host]]}
-    "terminus" {:file-name "config.clj"
-                :source-config-path "resources/config.edn"
-                :keys [[:client-config :solr-url]
-                       [:client-config :kafka-url]
-                       [:client-config :zookeeper-url]
-                       [:data-sources :hippalectryon :solr-url]
-                       [:data-sources :hippalectryon :solr-zookeeper-url]]}
-    "bifrost" {:file-name "config.clj"
-               :source-config-path "resources/bifrost/config.clj"
-               :keys [[:inventory-solr-url]
-                      [:event-service-solr-url]
-                      [:reconciliation-solr-url]
-                      [:solr-zookeeper-url]
-                      [:fault-url]
-                      [:domain-controller]
-                      [:kafka-url]
-                      [:zookeeper-url]
-                      [:bpm :engine-url]
-                      [:file-upload-targets :remote-host]
-                      [:metrics-graphite :host]]}
-    "hecate" {:file-name "config.edn"
-              :source-config-path ""
-              :keys [[:realtime :zk-url-list]
-                     [:default :zk-url-list]
-                     [:solr-query :uri]
-                     [:event-sink :uri]
-                     [:alarm-sink :uri]
-                     [:kafka-output :zk-url-list]]}
-    "moirai" {:file-name "config.edn"
-              :source-config-path "resources/config.edn"
-              :keys [[:zookeeper :urls]]}})
+  (utils/load-datastructure-from-file (str constants/user-root-path ".clojure-utils/config-settings-6.x.clj")))
 
 
 (def ValidIpAddressRegex #"(http[s]?:\/\/)?(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}(1[0-9]{2}|2[0-4][0-9]|25[0-5]|[1-9][0-9]|[0-9])(:[0-9]{1,6})?")
@@ -197,6 +84,14 @@
       (not (nil? (re-matches ValidIpAddressRegex strng)))))
 
 
+(defn compare-vectors [a b]
+  (if (= (count a) (count b))
+    (compare a b)
+    (if (= (first a) (first b))
+      (compare-vectors (rest a) (rest b))
+      (compare (first a) (first b)))))
+
+
 (defn flatten-keys
   "based on https://stackoverflow.com/questions/32853004/iterate-over-all-keys-of-nested-map"
   [m]
@@ -219,14 +114,6 @@
 ;;               (filter #(
 
               :else [(vec (apply list (cons k ks))) v']))))))
-
-
-(defn compare-vectors [a b]
-  (if (= (count a) (count b))
-    (compare a b)
-    (if (= (first a) (first b))
-      (compare-vectors (rest a) (rest b))
-      (compare (first a) (first b)))))
 
 
 (defn check-file
@@ -463,9 +350,13 @@
   (let [configs (get-all-zookeeper-config root-node)]
     (map #(if-not (nil? (second %)) (save-zookeeper-config-to-individual-file (first %) (second %) path)) configs)))
 
+(declare switch-zkclient)
 
 (defn start-zkclient
-  "Start function for Leaven ZKClient component"
+  "Start function for Leaven ZKClient component
+   Arguments:
+     host - Optional - host name and port of the zookeeper instance to connect to. Defaults to the 'zk-url setting or 127.0.0.1:2181.
+     timeout - Optional - timeout setting for the zookeeper client. Defaults to to the 'zktimeout setting or 60000."
   ([]
    (if (or (nil? @zk-url)
            (nil? @zktimeout))
@@ -476,16 +367,21 @@
      (start-zkclient host 60000)
      (start-zkclient host @zktimeout)))
   ([host timeout]
-   (if-not (= :started @zk-client-state)
-     (do
-       (utils/log-action "starting zookeeper client to '" host)
-       (set-zk-config host timeout)
-       (reset! zk-client-state :started))
-     :already-started)))
+   (if (and (not= host @zk-url)
+            (= :started @zk-client-state))
+     (switch-zkclient host)
+     (if (not= :started @zk-client-state)
+       (do
+         (utils/log-action "starting zookeeper client to '" host)
+         (set-zk-config host timeout)
+         (reset! zk-client-state :started))
+       :already-started))))
 
 
 (defn stop-zkclient
-  "Stop function for Leaven ZKClient component"
+  "Stop function for Leaven ZKClient component
+   Arguments:
+    host - host name and port of the zookeeper instance to stop the connection to."
   [host]
   (if (= :started @zk-client-state)
     (do
@@ -497,13 +393,18 @@
 
 (defn switch-zkclient
   "Switch the zookeeper client to a new client host
-  Arguments:
 
-  "
+  Arguments:
+    host - host name and port of the zookeeper instance to connect to."
   [host]
-  (utils/log-action "Switching zookeeper client from '" @zk-url "' to '" host)
-  (stop-zkclient @zk-url)
-  (start-zkclient host))
+  (if-not (and (= host @zk-url)
+               (= :started @zk-client-state))
+    (do
+      (println "Switching zookeeper client from '" @zk-url "' to '" host)
+      (utils/log-action "Switching zookeeper client from '" @zk-url "' to '" host)
+      (stop-zkclient @zk-url)
+      (start-zkclient host))))
+
 
 (defn get-zookeeper-config
   ""
@@ -805,6 +706,8 @@
     desc1 - a string containing a description of the first map, config1, used for display only
     desc2 - a string containing a description of the second map, config2, used for display only
   "
+  ([config1 config2 node desc1 desc2]
+   (compare-configs (get config1 node) (get config2 node) (str node " " desc1) (str node " " desc1)))
   ([app-name location1 location2]
    (let [config-1 (get-config app-name location1)
          config-2 (get-config app-name location2)]
