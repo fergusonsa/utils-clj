@@ -2,8 +2,11 @@
   "Utility functions used by other namespaces in the utils project"
   (:refer-clojure :exclude [help])
   (:require [utils.constants :as constants]
+            [clojure.data :as data]
             [clojure.string :as string])
-  (:use [clojure.pprint])
+  (:use [clojure.pprint]
+        [slingshot.slingshot :only [try+]]
+        [clojure.set :only [difference intersection]])
   (:gen-class)
   (:import [java.nio.file Files CopyOption]))
 
@@ -142,6 +145,70 @@
         timestamp-str (.format (java.text.SimpleDateFormat. "yyyy-MM-dd HH:mm:ss") (new java.util.Date))]
     (if (> (count message) 0)
       (spit log-file (format "%s %-40.40s %s\n" timestamp-str calling-function message) :append (.exists (clojure.java.io/file log-file))))))
+
+
+(defn flatten-keys
+  "based on https://stackoverflow.com/questions/32853004/iterate-over-all-keys-of-nested-map
+
+  Argument:
+    m - map to flatten the keys for
+
+  Returns:
+    If 'm is not a map, then returns a map with an empty sequence as the key and 'm as the value.
+    For maps, it returns a non-nested map with sequences as keys for all values, such that using (get-in m ky) would return the value."
+  [m]
+  (if (not (map? m))
+    {[] m}
+    (let [res (for [[k v] m
+                    [ks v'] (flatten-keys v)]
+                [(vec (apply list (cons k ks))) v'])]
+;;       (pprint res)
+      (try+
+        (into (sorted-map) res)
+        (catch Object _
+          (into {} res))))))
+
+
+(defn display-map-diffs
+  "Compare 2 maps showing the portions that are the same, the portions with different values, and the portions that are unique to each.
+  Currently does not differentiate differences in sequences, one difference means the whole sequence is different. TODO Correct this.
+
+  Arguments:
+    map1 - first map to compare against.
+    map2 - second map to compare with.
+    descript1 - Optional - Descriptive string for the first map used for display only. Defaults to \"first\".
+    descript1 - Optional - Descriptive string for the second map used for display only. Defaults to \"second\".
+  "
+  ([map1 map2]
+   (display-map-diffs map1 map2 "first" "second"))
+  ([map1 map2 descript1 descript2]
+   (let [diffs (data/diff map1 map2)
+         unq-1 (flatten-keys (first diffs))
+         unq-2 (flatten-keys (second diffs))
+         in-both (intersection (set (keys unq-1)) (set (keys unq-2)))
+         max-len-keys (max (apply max (map #(count (str %)) (keys unq-1)))
+                           (apply max (map #(count (str %)) (keys unq-2)))
+                           (count descript1)
+                           (count descript2))
+         max-len-vals1 (apply max (map #(if (string? %) (count %) (count (str %))) (vals unq-1)))
+         fmt-str (str "%-" (+ max-len-keys 1) "s  %-" (+ max-len-vals1 1) "s   %s\n")]
+     (binding [*print-right-margin* 140
+              *print-miser-width* 120]
+       (println "\nPortions of both maps that are the same:")
+       (clojure.pprint/pprint (into (sorted-map) (last diffs)))
+       (println "\nPortions of both maps that have different values:")
+       (printf fmt-str "Keys" descript1 descript2)
+       (printf fmt-str (apply str (repeat max-len-keys "-"))
+               (apply str (repeat max-len-vals1 "-"))
+               (apply str (repeat max-len-vals1 "-")))
+       (doseq [k in-both]
+         (printf fmt-str (str k) (str (get unq-1 k)) (str (get unq-2 k))))
+       (println "\nPortions of" descript1 "map that is unique:")
+       (doseq [[k v] (filter (fn [[k1 v1]] (not (contains? in-both k1))) unq-1) ]
+         (printf fmt-str (str k) (str (get unq-1 k)) ""))
+       (println "\nPortions of" descript2 "map that is unique:")
+       (doseq [[k v] (filter (fn [[k1 v1]] (not (contains? in-both k1))) unq-2) ]
+         (printf fmt-str (str k) (str (get unq-2 k)) ""))))))
 
 
 (defn- print-var-help-info
