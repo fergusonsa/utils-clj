@@ -134,21 +134,29 @@
 
 
 (defn set-src-root!
+  "Sets the workspace source root directory for other util functions.
+  If the 'new-root-path is not provided, the user is presented with a list of
+  available source roots that are in the 'available-src-roots constant, and the
+  user can enter the corresponding number to select a source root.
+
+  Arguments:
+    new-root-path - Optional - a directory path for the workspace root containing git repos."
   ([]
    (let [available-roots (zipmap (range 1 (+ (count available-src-roots) 1)) available-src-roots)]
-     (pprint available-roots)
      (binding [*print-right-margin* 30
               *print-miser-width* 12]
      (pprint available-src-roots))
      (println "Available source root directories:")
-;;      (map #(println %) available-roots)
      (doseq [[k v] available-roots]
        (println "  " k ":" v))
-;;      (map #(doall (println "  " (key %) ":" (val %)(flush))) available-roots)
-     (flush)
      (print "Enter the number of the directory to use and hit <Enter>: ")
      (flush)
-     (set-src-root! (get available-roots (parse-int (read-line))))))
+     (let [input (read-line)
+           root-path (get available-roots (parse-int input))]
+       (println "input: " input)
+       (if root-path
+         (set-src-root! root-path)
+         ("Invalid character entered")))))
   ([new-root-path]
    (if (.isDirectory (io/file new-root-path))
      (alter-var-root #'src-root-dir (constantly new-root-path))
