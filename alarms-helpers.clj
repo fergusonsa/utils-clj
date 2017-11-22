@@ -9,14 +9,19 @@
 ;; user=> (ns cenx.heimdallr.customers.vzw-mpn.debug)
 ;; cenx.heimdallr.customers.vzw-mpn.debug=> (load-string (slurp "/Users/fergusonsa/CENX/utils/alarms-helpers.clj"))
 ;; 
+(ns cenx.heimdallr.debug.fergusonsa)
 (use 'cenx.heimdallr.customers.shared.vzw.debug)
 (use 'cenx.heimdallr.debug)
 (use 'clojure.pprint) 
 ;;(use '[clj-time.core :exclude [second extend start]])
 
+;; for 6.x use this line:
+(def send-alarm-msg send-vsm)
+;; for 7.x use this line:
+(def send-alarm-msg send-analytics)
+
 
 (defn load-this-file []
-  (ns cenx.heimdallr.customers.vzw-mpn.debug)
   (load-string (slurp "/Users/fergusonsa/CENX/utils/alarms-helpers.clj"))
   )
  
@@ -41,14 +46,23 @@
 
 (defn cancel-all-alarms []
   (doseq [alarm-name (get-all-active-alarms)] 
-    (send-vsm alarm-name :Ok scotts-description)))
+    (send-alarm-msg alarm-name :Ok scotts-description)))
 
 (defn clear-alarm [alarm-name]
   (if (is-my-alarm alarm-name)
     (do 
-      (send-vsm alarm-name :Ok scotts-description)
+      (send-alarm-msg alarm-name :Ok scotts-description)
       (swap! submitted-alarms disj alarm-name)))
   (display-num-alarms))
+
+(defn raise-alarm
+  ([alrm-name]
+    (raise-alarm alrm-name :Failed scotts-description))
+  ([alrm-name state details]
+    (println "setting alarm" alrm-name "to" state)
+    (swap! submitted-alarms conj alrm-name)
+    (send-alarm-msg alrm-name state details)))
+
 
 (defn raise-random-alarms [num-to-submit]
   (let [init-subs (count @submitted-alarms)]
@@ -58,14 +72,14 @@
           (do 
             (println "submitting " alrm-name)
             (swap! submitted-alarms conj alrm-name)
-            (send-vsm alrm-name :Failed scotts-description)))))
+            (send-alarm-msg alrm-name :Failed scotts-description)))))
   (display-num-alarms)))
   
 (defn cancel-all-my-alarms []
   (doseq [alarm-name (clojure.set/intersection @submitted-alarms (into #{} (get-all-active-alarms)))]     
     (do
       (println "Setting alarm " alarm-name " to :Ok")
-      (send-vsm alarm-name :Ok scotts-description)
+      (send-alarm-msg alarm-name :Ok scotts-description)
       (swap! submitted-alarms disj alarm-name)))
   (display-num-alarms))
 
@@ -73,18 +87,18 @@
   (doseq [alarm-name (filter is-my-alarm (get-all-active-alarms))]     
     (do
       (println "Setting alarm " alarm-name " to :Ok")
-      (send-vsm alarm-name :Ok scotts-description)
+      (send-alarm-msg alarm-name :Ok scotts-description)
       (swap! submitted-alarms disj alarm-name))))
 
 (defn show-active-daxData-alarms [] (pprint (apply sorted-set (filter (fn [x] (.contains x "daxDataViolationAlert")) (get-all-active-alarms)))))
 (defn show-my-active-alarms [] (pprint (apply sorted-set (filter is-my-alarm (get-all-active-alarms)))))
-(defn get-alarm-types [] (set (for [x (get-alarm-names)] (re-find #"^[a-zA-Z_]*" x))))
+(defn get-alarm-types [] (set (for [x (get-alarm-names)] (re-find #"^[a-zA-Z_-]*" x))))
 
 (defn raise-alarm-of-type [alarm-type]
   (let [alrm-name (rand-nth (filter-alarm-names (str type ":")))]
     (println "submitting " alrm-name)
     (swap! submitted-alarms conj alrm-name)
-    (send-vsm alrm-name :Failed scotts-description)))    
+    (send-alarm-msg alrm-name :Failed scotts-description)))    
 
 (defn raise-one-alarm-of-each-type "Raise one alarm for all types available." [] (doseq [type (get-alarm-types)] (raise-alarm-of-type type)) (display-num-alarms))
 
@@ -95,12 +109,12 @@
         (if (not (nil? alarm-name))
           (do
             (println "Setting alarm " alarm-name " to :Ok")
-            (send-vsm alarm-name :Ok scotts-description)
+            (send-alarm-msg alarm-name :Ok scotts-description)
             (swap! submitted-alarms disj alarm-name))))))
   (display-num-alarms))
 
 (defn find-my-alarms [] (reset! submitted-alarms (into #{} (filter is-my-alarm (get-all-active-alarms)))))
 
 
-;; (send-vsm  "daxDataViolationAlert:MPN01050:3205682:HA_MIP_Reg_Total"  :Failed scotts-description)
+;; (send-alarm-msg  "daxDataViolationAlert:MPN01050:3205682:HA_MIP_Reg_Total"  :Failed scotts-description)
 
