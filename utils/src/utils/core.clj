@@ -72,13 +72,16 @@
     (if (sequential? version)
       (get-tag repo-name (first version))
       (println "!!!!!!!!!!!!!!!!!!!!!!!! version is not string! nor sequential >" version "<"))
-
-    (if (or (= version constants/default-branch)
-            (.startsWith version (str repo-name "-"))
-            (.startsWith version "r/")
-            (.startsWith version "f/"))
-      version
-      (str repo-name "-" version))))
+    (if (= repo-name "paradigm")
+      (if (.startsWith version "v")
+        version
+        (str "v" version))
+      (if (or (= version constants/default-branch)
+              (.startsWith version (str repo-name "-"))
+              (.startsWith version "r/")
+              (.startsWith version "f/"))
+        version
+        (str repo-name "-" version)))))
 
 
 (defn check-optional-arguments-for-array
@@ -146,6 +149,8 @@
     (if (> (count message) 0)
       (spit log-file (format "%s %-40.40s %s\n" timestamp-str calling-function message) :append (.exists (clojure.java.io/file log-file))))))
 
+(defn get-stacktrace []
+  (callers))
 
 (defn flatten-keys
   "based on https://stackoverflow.com/questions/32853004/iterate-over-all-keys-of-nested-map
