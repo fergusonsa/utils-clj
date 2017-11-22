@@ -315,9 +315,9 @@
 
 
 
-(defn build-repo-dependency-node [module-name version & {:keys [depth force-build] :or {depth 0
+(defn build-repo-dependency-node [module-name version & {:keys [depth force-build] :or {depth 1
                                                                                       force-build false}}]
-  (println "building repo-node for \"" module-name "\" version \"" version "\" and depth" depth "and force-build" force-build)
+  (println (str "building repo-node for \"" module-name "\" version \"" version "\" and depth" depth "and force-build" force-build))
   (let [repo-name (if (.startsWith module-name (str constants/library-namespace "/")) (subs module-name (count (str constants/library-namespace "/"))) module-name)
         tag (utils/get-tag repo-name version)
         deps (get-project-dependencies @connection-info repo-name tag repo-name)
@@ -339,7 +339,7 @@
     node))
 
 
-(defn build-dependency-node [module-name version & {:keys [depth force-build] :or {depth 0
+(defn build-dependency-node [module-name version & {:keys [depth force-build] :or {depth 1
                                                                                    force-build false}}]
 ;;   (println "building node for \"" module-name "\" version \"" version "\" and depth" depth "and force-build" force-build)
   (let [sub-name (if (.startsWith module-name (str constants/library-namespace "/")) (subs module-name (count (str constants/library-namespace "/"))) module-name)]
@@ -347,12 +347,12 @@
       (if (and already-saved-node (not force-build))
         already-saved-node
         (if (.startsWith module-name (str constants/library-namespace "/"))
-          (if (not= 1 depth) (build-repo-dependency-node module-name version :depth (dec depth) :force-build force-build))
+          (if (pos? depth) (build-repo-dependency-node module-name version :depth (dec depth) :force-build force-build))
           (build-external-dependency-node module-name version))))))
 
 
 (defn node-has-dependencies? [tree]
-  (and (contains? tree :dependencies) (> (count (:dependencies tree)) 0)))
+  (and (contains? tree :dependencies) (pos? (count (:dependencies tree)))))
 
 
 (defn make-tree-readable
@@ -374,7 +374,7 @@
 (defn find-module-dependencies
   ([module-name]
     (find-module-dependencies module-name constants/default-branch))
-  ([module-name version & {:keys [depth force-build] :or {depth 0
+  ([module-name version & {:keys [depth force-build] :or {depth 1
                                                           force-build false}}]
     (let [proper-version (utils/get-tag module-name version)]
       (build-repo-dependency-node module-name proper-version :depth depth :force-build force-build))))
