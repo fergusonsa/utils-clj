@@ -10,6 +10,13 @@
   (:gen-class)
   (:import [java.nio.file Files CopyOption]))
 
+(defn set-pprint-width
+  "Sets width for pretty-printing with pprint and pp.
+  From http://grokbase.com/t/gg/clojure/15175rzde6/changing-default-clojure-pprint-print-right-margin"
+  [cols]
+  (alter-var-root
+    #'clojure.pprint/*print-right-margin*
+    (constantly cols)))
 
 (defn load-datastructure-from-file
   ""

@@ -14,4 +14,5 @@
             [utils.dependencies :as dependencies]
             [utils.repositories :as repositories]
             [version-clj.core :as version]
-            [clojure.tools.namespace.repl :refer [refresh set-refresh-dirs]]))
+            [clojure.tools.namespace.repl :refer [refresh set-refresh-dirs]]
+            [fipp.edn :refer (pprint) :rename {pprint fipp}]))
