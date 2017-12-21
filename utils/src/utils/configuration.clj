@@ -244,8 +244,9 @@
   ([^String node]
    (locking client
      (let [client (get-client)]
-       (println "removing zookeeper node \"%s\" and all its children" node)
-       (zk/delete-all client node)))))
+       (println (str "removing zookeeper node \"" node "\" and all its children"))
+       (zk/delete-all client node)
+       (utils/log-action "removing zookeeper node \"" node "\" and all its children")))))
 
 
 (defn set-zk-config
@@ -499,7 +500,7 @@
 (defn load-zookeeper-config-from-files
   ""
   ([^String path ]
-   (load-zookeeper-config-from-files (clojure.java.io/file path) "/cenx/config"))
+   (load-zookeeper-config-from-files (clojure.java.io/file path) (str "/" constants/library-namespace "/config")))
   ([^java.io.File fl node-path]
    (cond
      (.isFile fl)
@@ -707,23 +708,24 @@
     desc2 - a string containing a description of the second map, config2, used for display only
   "
   ([config1 config2 node desc1 desc2]
-   (compare-configs (get config1 node) (get config2 node) (str node " " desc1) (str node " " desc1)))
+   (compare-configs (get config1 node) (get config2 node) (str node " " desc1) (str node " " desc2)))
   ([app-name location1 location2]
    (let [config-1 (get-config app-name location1)
          config-2 (get-config app-name location2)]
-     (compare-configs config-1 config-2 location1 location2)))
+     (compare-configs config-1 config-2 (name location1) (name location2))))
   ([config1 config2 desc1 desc2]
-   (let [diffs (data/diff config1 config2)
-         descript1 (if (nil? desc1) "first" desc1)
-         descript2 (if (nil? desc1) "second" desc2)]
-     (binding [*print-right-margin* 140
-              *print-miser-width* 120]
-       (println "Portions of configs that are the same:")
-       (clojure.pprint/pprint (into (sorted-map) (last diffs)))
-       (println "\nPortions of" descript1 "config that is unique:")
-       (clojure.pprint/pprint (into (sorted-map) (first diffs)))
-       (println "\nPortions of" descript2 "config that is unique:")
-       (clojure.pprint/pprint (into (sorted-map) (second diffs)))))))
+;;    (let [diffs (data/diff config1 config2)
+;;          descript1 (if (nil? desc1) "first" desc1)
+;;          descript2 (if (nil? desc1) "second" desc2)]
+;;      (binding [*print-right-margin* 140
+;;               *print-miser-width* 120]
+;;        (println "Portions of configs that are the same:")
+;;        (clojure.pprint/pprint (into (sorted-map) (last diffs)))
+;;        (println "\nPortions of" descript1 "config that is unique:")
+;;        (clojure.pprint/pprint (into (sorted-map) (first diffs)))
+;;        (println "\nPortions of" descript2 "config that is unique:")
+;;        (clojure.pprint/pprint (into (sorted-map) (second diffs)))))))
+   (utils/display-map-diffs config1 config2 desc1 desc2)))
 
 
 (defn copy-config-from-to

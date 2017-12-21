@@ -91,14 +91,6 @@
                      {})))))
 
 
-(defn get-release-docker-images []
-  (let [url "https://ship.cenx.com/#browse/search/docker=attributes.docker.imageName%3Dexanova"
-        results (:body (client/get url
-                            {:basic-auth ["scott.ferguson"
-                                          (:password utils.identity/identity-info)]
-                             :throw-exceptions false}))]
-    results))
-
 (defn get-release-branches
   "Returns a sequence of maps containing
         {:name \"<branch-name>\" :target {:date \"YYYY-mm-ddTHH:MM:SS+00:00\"}}

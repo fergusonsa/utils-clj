@@ -45,6 +45,15 @@
         (-> data
             (clojure.pprint/pprint fl))))))
 
+(defn format-clojure-data-in-file
+  ""
+  [file-path]
+  (when (.exists (clojure.java.io/file file-path))
+    (let [new-file-path (str file-path "-formatted.clj")]
+      (-> file-path
+          (load-datastructure-from-file)
+          (save-datastructure-to-file new-file-path))
+      (println "/n The file" file-path "has been formatted and written to" new-file-path))))
 
 (defn strip-version
   "Removes the repo name from the tag if it is present to get the version.

@@ -127,7 +127,7 @@
         (clojure.string/replace #":uberjar-exclusions\s+\[([^\[\]]*|\[([^\[\]]*|\[[^\[\]]*\])*\])*\]" "")
 
         ;; Need to handle multiple names inside [...] as in
-        ;; :exclusions ["cenx/stentor" potemkin cenx/hades "org.clojure/clojure"]
+        ;; :exclusions ["lib-namespace/library1" "potemkin" "lib-namespace2/library2" "org.clojure/clojure"]
         (clojure.string/replace #"\[[^\[\]]*\]" (fn [v] (let [parts (clojure.string/split v #" +")] (if (> (count parts) 2) (apply str (interpose "\n" parts)) v))))
 
         ;; Change any namespace or class names to strings since they will not be present in the repl
@@ -151,7 +151,6 @@
 
 (defn get-original-project-clj [repo-name branch]
   ; Get the source for the project.clj file
-  ; curl --user scott.ferguson@cenx.com:<pwd> https://api.bitbucket.org/1.0/repositories/cenx-cf/ares/raw/integration/project.clj
   (clojure.string/trim (:body (client/get (str "https://api.bitbucket.org/1.0/repositories/" constants/bitbucket-root-user "/" repo-name "/raw/" branch "/project.clj")
                                           {:basic-auth [(:user utils.identity/identity-info) (:password utils.identity/identity-info)] }))))
 
@@ -215,7 +214,6 @@
 
 
 (defn parse-repo-list-page []
-  ; $ curl --user scott.ferguson@cenx.com:<pwd> https://api.bitbucket.org/2.0/repositories/cenx-cf/
    (println "loop for  ----------------- " (:url @connection-info) "====")
    (try+
      (let [results (client/get (:url @connection-info)
@@ -468,7 +466,7 @@
 (defn find-modules-using-library
   ""
   [module-name]
-  (let [lib-name (if (.startsWith module-name "cenx/") module-name (str "cenx/" module-name))]
+  (let [lib-name (if (.startsWith module-name (str constants/library-namespace "/")) module-name (str constants/library-namespace "/" module-name))]
 ;;     (->> @repository-info
 ;;         (:dependencies)
 ;;         (filter (fn [[k v]] (and (map? v) (some #(= % lib-name) (keys v))))))))
@@ -477,7 +475,7 @@
 (defn find-modules-using-library2
   ""
   [module-name]
-  (let [lib-name (if (.startsWith module-name "cenx/") module-name (str "cenx/" module-name))]
+  (let [lib-name (if (.startsWith module-name (str constants/library-namespace "/")) module-name (str constants/library-namespace "/" module-name))]
 ;;     (->> @repository-info
 ;;         (:dependencies)
 ;;         (filter (fn [[k v]] (and (map? v) (some #(= % lib-name) (keys v))))))))
