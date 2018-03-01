@@ -16,6 +16,7 @@
                  [version-clj "0.1.2"]
                  [k2nr/docker "0.0.2"]
                  [zookeeper-clj "0.9.4"]
+                 [org.clojure/tools.namespace "0.2.11"]
                  [fipp "0.6.12"]]
   :main ^:skip-aot utils.main
   :target-path "target/%s"

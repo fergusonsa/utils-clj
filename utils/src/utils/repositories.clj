@@ -135,9 +135,10 @@
                                                 (:password utils.identity/identity-info)]
                                    :throw-exceptions false
                                    :as :json}))]
+;;     (pprint results)
     (->> results
-         (keys)
-         (map name)
+;;          (keys)
+         (map #(get (val %) :branch))
          (into (sorted-set)))))
 
 (defn is-branch?

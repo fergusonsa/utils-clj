@@ -10,7 +10,6 @@
             [clj-time.format :as time-format]
             [utils.fake :as creds]
             [utils.core :as utils]
-            [utils.diff-as-list :as diff]
             [clojure.data :as data]
             [zookeeper :as zk]
             [zookeeper.data :as zkdata]

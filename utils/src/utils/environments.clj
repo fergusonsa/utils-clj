@@ -237,9 +237,9 @@
 (defn get-deployments-wildfly
   " NOT COMPLETED "
   [env-srv]
-  (let [url-base "http://192.168.99.100:9990/management"
+  (let [url-base (str "http://" env-srv ":9990/management")
         srv-info-resp (client/get url-base {:basic-auth [(:user "admin") (:password "admin")] })]
-        (true)
+        srv-info-resp
         ))
 
 

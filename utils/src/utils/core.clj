@@ -132,6 +132,18 @@
                  (-> (Throwable.) .fillInStackTrace .getStackTrace))]
     (vec (doall (remove ignored? fns)))))
 
+(defn- trace []
+  (-> (Throwable.)
+      .fillInStackTrace
+      .getStackTrace
+      ((partial map #(str (.getClassName %))))
+      (nth 3)
+      ((partial println "TRACE "))))
+
+(defn test-calling-function []
+  (println "test-calling-function: " (trace))
+  (pprint (map #(str (.getClassName %))
+                 (-> (Throwable.) .fillInStackTrace .getStackTrace))))
 
 (defn get-report-file-name-path
   "Returns a path for a report file with the format \"<:path>/<:subdirectory>/<prefix>-yyyyMMdd_HHmmss<:extenstion>\".
